@@ -22,12 +22,34 @@ class MacPlatform(DesktopPlatform):
     """Production-grade macOS Desktop Automation Platform."""
 
     def __init__(self):
-        # Locate precompiled binaries (checks package bin, user home, or falls back to system)
-        local_bin = Path(__file__).resolve().parent.parent / "bin"
-        user_skills = Path.home() / ".gemini/config/skills/computer-use/scripts"
+        # Locate precompiled binaries
+        bin_dir = Path(__file__).resolve().parent.parent / "bin"
+        bin_dir.mkdir(parents=True, exist_ok=True)
+        swift_dir = Path(__file__).resolve().parent / "swift"
 
-        self.ocr_bin = str(local_bin / "ocr_detector") if (local_bin / "ocr_detector").exists() else str(user_skills / "ocr_detector")
-        self.native_bin = str(local_bin / "native_events") if (local_bin / "native_events").exists() else str(user_skills / "native_events")
+        self.ocr_bin = str(bin_dir / "ocr_detector")
+        self.native_bin = str(bin_dir / "native_events")
+
+        # Auto-compile from Swift source if precompiled binaries are missing
+        if not os.path.exists(self.ocr_bin) and (swift_dir / "ocr_detector.swift").exists():
+            try:
+                subprocess.run(
+                    ["swiftc", "-O", str(swift_dir / "ocr_detector.swift"), "-o", self.ocr_bin],
+                    check=True, capture_output=True, timeout=30.0,
+                )
+                os.chmod(self.ocr_bin, 0o755)
+            except Exception:
+                pass
+
+        if not os.path.exists(self.native_bin) and (swift_dir / "native_events.swift").exists():
+            try:
+                subprocess.run(
+                    ["swiftc", "-O", str(swift_dir / "native_events.swift"), "-o", self.native_bin],
+                    check=True, capture_output=True, timeout=30.0,
+                )
+                os.chmod(self.native_bin, 0o755)
+            except Exception:
+                pass
 
     def capture_screen(self, output_path: Optional[str] = None) -> str:
         """Capture screen using native screencapture."""
@@ -37,59 +59,86 @@ class MacPlatform(DesktopPlatform):
         return out_file
 
     def detect_ui_elements(self, image_path: str, scale: float = 2.0) -> List[UIElement]:
-        """Run native Apple Vision Accurate OCR + UI container detection."""
-        if not os.path.exists(self.ocr_bin):
-            return []
-
-        try:
-            res = subprocess.run(
-                [self.ocr_bin, image_path, str(scale)],
-                capture_output=True,
-                text=True,
-                check=False,
-                timeout=10.0,
-            )
-        except Exception:
-            return []
-
+        """Run native Apple Vision Accurate OCR + UI container detection with fallback."""
         elements: List[UIElement] = []
         _button_keywords = {"确定", "取消", "发送", "登录", "Save", "OK", "Open", "Cancel", "Send", "Close", "Delete", "确认", "提交"}
 
-        for line in res.stdout.splitlines():
-            parts = line.strip().split("|", 5)
-            if len(parts) == 6:
-                _, x_str, y_str, w_str, h_str, text = parts
-                try:
-                    x, y, w, h = int(x_str), int(y_str), int(w_str), int(h_str)
-                    if w < 5 or h < 5:
+        # 1. Primary: Native Apple Vision Accurate OCR via precompiled binary
+        if os.path.exists(self.ocr_bin):
+            try:
+                res = subprocess.run(
+                    [self.ocr_bin, image_path, str(scale)],
+                    capture_output=True,
+                    text=True,
+                    check=False,
+                    timeout=10.0,
+                )
+                for line in res.stdout.splitlines():
+                    parts = line.strip().split("|", 5)
+                    if len(parts) == 6:
+                        _, x_str, y_str, w_str, h_str, text = parts
+                        try:
+                            x, y, w, h = int(x_str), int(y_str), int(w_str), int(h_str)
+                            if w < 5 or h < 5:
+                                continue
+                            cx = x + w // 2
+                            cy = y + h // 2
+
+                            if text == "[UI_CONTAINER]":
+                                category = "control"
+                                label_name = "Icon/Button"
+                            elif any(kw in text for kw in _button_keywords):
+                                category = "button"
+                                label_name = text
+                            elif any(kw in text for kw in {"搜索", "Search", "输入", "Type"}):
+                                category = "input"
+                                label_name = text
+                            else:
+                                category = "text"
+                                label_name = text
+
+                            elements.append(
+                                UIElement(
+                                    id=str(len(elements) + 1),
+                                    label=label_name,
+                                    category=category,
+                                    bbox=[x, y, x + w, y + h],
+                                    center=[cx, cy],
+                                )
+                            )
+                        except ValueError:
+                            continue
+                if elements:
+                    return elements
+            except Exception:
+                pass
+
+        # 2. Fallback: Pure Python RapidOCR (if installed on macOS)
+        try:
+            from rapidocr_onnxruntime import RapidOCR
+            engine = RapidOCR()
+            result, _ = engine(image_path)
+            if result:
+                for idx, (box, text, conf) in enumerate(result):
+                    if conf < 0.35:
                         continue
-                    cx = x + w // 2
-                    cy = y + h // 2
-
-                    if text == "[UI_CONTAINER]":
-                        category = "control"
-                        label_name = "Icon/Button"
-                    elif any(kw in text for kw in _button_keywords):
-                        category = "button"
-                        label_name = text
-                    elif any(kw in text for kw in {"搜索", "Search", "输入", "Type"}):
-                        category = "input"
-                        label_name = text
-                    else:
-                        category = "text"
-                        label_name = text
-
+                    xs = [p[0] for p in box]
+                    ys = [p[1] for p in box]
+                    x1, y1, x2, y2 = int(min(xs) / scale), int(min(ys) / scale), int(max(xs) / scale), int(max(ys) / scale)
+                    cx = (x1 + x2) // 2
+                    cy = (y1 + y2) // 2
+                    cat = "button" if any(kw in text for kw in _button_keywords) else "text"
                     elements.append(
                         UIElement(
-                            id=str(len(elements) + 1),
-                            label=label_name,
-                            category=category,
-                            bbox=[x, y, x + w, y + h],
+                            id=str(idx + 1),
+                            label=text.strip(),
+                            category=cat,
+                            bbox=[x1, y1, x2, y2],
                             center=[cx, cy],
                         )
                     )
-                except ValueError:
-                    continue
+        except Exception:
+            pass
 
         return elements
 

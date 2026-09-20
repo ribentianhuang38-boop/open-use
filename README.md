@@ -192,6 +192,22 @@ Add to `.cursor/mcp.json`:
 
 ---
 
+## Agent Skill & Deployment
+
+OpenUse features a **Trinity Integration Architecture** to guarantee instant, zero-friction adoption across any agent platform:
+
+| Integration Mode | Target Hosts | Setup Method |
+| :--- | :--- | :--- |
+| **Model Context Protocol (MCP)** | Claude Desktop, Cursor, Windsurf, Zed, VS Code | 1-line config in host JSON |
+| **Agent Skill (`SKILL.md`)** | Antigravity, Claude Code, OpenClaw, Custom Agents | Drop directory into `skills/` path |
+| **CLI & Python SDK** | Standalone terminals, automated scripts, backend services | `pip install open-use` |
+
+### Out-of-the-Box Deployment Guarantees
+- **macOS Zero-Setup**: Includes precompiled, lightweight native binaries (`ocr_detector` and `native_events`). Zero Xcode or Swift toolchain installation needed. Automatically falls back to local JIT compilation or pure Python RapidOCR on edge environments.
+- **Windows Zero-Setup**: 100% pure Python + Win32 `ctypes` (`SendInput`, `CF_HDROP`). Zero C++ or Visual Studio build tools required. ONNX runtime models are self-contained.
+
+---
+
 ## Python SDK
 
 ```python

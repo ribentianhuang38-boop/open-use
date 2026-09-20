@@ -62,11 +62,17 @@ dev = [
 ]
 
 [project.scripts]
-open-use = "run:main"
-openuse = "run:main"
+open-use = "open_use.cli:main"
+openuse = "open_use.cli:main"
 # Aliases for backwards compatibility
-omni-use = "run:main"
-omni = "run:main"
+omni-use = "open_use.cli:main"
+omni = "open_use.cli:main"
 
 [tool.setuptools.packages.find]
 include = ["open_use*"]
+
+[tool.setuptools.package-data]
+open_use = [
+    "bin/*",
+    "desktop/swift/*",
+]

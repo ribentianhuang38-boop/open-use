@@ -192,6 +192,22 @@ openuse --mcp
 
 ---
 
+## Agent 技能 (Skill) 与简易部署
+
+OpenUse 采用**“三位一体 (Trinity)”**架构设计，无论你使用哪种 AI 框架，都能 1 秒接入且绝无环境编译报错：
+
+| 接入形态 | 目标宿主平台 | 部署与接入方式 |
+| :--- | :--- | :--- |
+| **Model Context Protocol (MCP)** | Claude Desktop, Cursor, Windsurf, Zed, VS Code | 在客户端 JSON 配置文件中添加一行 command |
+| **Agent Skill (`SKILL.md`)** | Antigravity, Claude Code, OpenClaw, 各种自主 Agent | 直接将仓库目录放入 `skills/` 路径即可自动识别 |
+| **独立 CLI 与 Python SDK** | 本地终端日常工具、自动化脚本、后台服务集成 | `pip install open-use` 或 `git clone` 直接跑 |
+
+### 开箱即用 (Out-of-the-Box) 零编译保障机制
+- **macOS 端零依赖**：项目内直接内置了编译打包好的轻量 Mach-O 原生二进制 (`ocr_detector` 与 `native_events`，仅数十 KB)。用户无需安装 Xcode 或 Swift 编译工具链即可拥有 Apple Neural Engine 硬件加速；极端情况下具备自动 JIT 就地编译与纯 Python RapidOCR 降级双保险，绝不报错中断。
+- **Windows 端 100% 纯 Python**：基于 Win32 原生 `ctypes` (`user32.SendInput` / `CF_HDROP` 剪贴板文件注入)，完全不需要安装庞大的 MSVC / C++ Build Tools。OCR 模型内置于 ONNX 依赖包中，克隆下来立刻运行。
+
+---
+
 ## Python SDK 调用
 
 ```python
