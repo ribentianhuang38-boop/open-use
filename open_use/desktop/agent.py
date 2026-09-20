@@ -14,6 +14,7 @@ from typing import Any, Dict, List, Optional
 
 from ..core.jev_client import JevClient
 from ..core.jev_judge import JevJudge
+from ..core.dual_core import DualCoreOrchestrator, ControllerMode, CapabilityAssessment, BranchHealth
 from .hal import DesktopPlatform, UIElement, get_current_platform
 
 
@@ -53,6 +54,7 @@ class DesktopAgent:
 
         self.client = JevClient()
         self.judge = JevJudge(client=self.client) if enable_judge else None
+        self.orchestrator = DualCoreOrchestrator(client=self.client)
 
         self.history: List[Dict[str, Any]] = []
         self.step_count = 0
@@ -148,6 +150,36 @@ class DesktopAgent:
 
         # 2. Detect UI elements (Vision on Mac / RapidOCR on Win)
         elements = self.platform.detect_ui_elements(raw_shot, scale=self.scale)
+        screen_summary = " ".join(e.label for e in elements[:35])
+
+        # 2.1 Wrong Branch Monitor & Auto-Rollback
+        last_action_name = self.history[-1]["action"] if self.history else "none"
+        branch = self.orchestrator.check_branch_health(screen_summary, self.goal, last_action=last_action_name)
+        if not branch.on_track and branch.recommended_rollback != "none":
+            self.orchestrator.execute_rollback(branch.recommended_rollback, self.platform)
+            # Re-capture normalized screen after rollback
+            time.sleep(0.3)
+            raw_shot = self.platform.capture_screen()
+            elements = self.platform.detect_ui_elements(raw_shot, scale=self.scale)
+            screen_summary = " ".join(e.label for e in elements[:35])
+
+        # 2.2 Jev Self-Assessment: Can I handle this?
+        capacity = self.orchestrator.assess_jev_capacity(
+            screen_summary=screen_summary,
+            goal=self.goal,
+            available_elements_count=len(elements),
+        )
+        if not capacity.can_handle:
+            print(f"  🛑 [Jev Handover] Jev self-assessed inability to proceed: '{capacity.reason}' (conf={capacity.confidence:.2f}). Escalate to LLM!")
+            return DesktopStepResult(
+                step=self.step_count,
+                action_type="escalate_to_llm",
+                target_label=capacity.reason,
+                target_point=None,
+                is_goal_satisfied=False,
+                judge_score=0.0,
+                latency_ms=int((time.perf_counter() - t_start) * 1000),
+            )
 
         if not elements:
             return DesktopStepResult(
@@ -226,6 +258,7 @@ class DesktopAgent:
             judge_score=judge_score,
             latency_ms=int((time.perf_counter() - t_start) * 1000),
         )
+        self.orchestrator.record_step(action_type, target_label)
         self.history.append({
             "step": self.step_count,
             "action": action_type,

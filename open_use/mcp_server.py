@@ -62,7 +62,7 @@ class MCPServer:
                     "properties": {
                         "goal": {
                             "type": "string",
-                            "description": "Desktop task goal, e.g., 'Click contact 镇宅前列腺 and send screenshot'",
+                            "description": "Desktop task goal, e.g., 'Click contact ProjectLead and send screenshot'",
                         },
                         "max_steps": {
                             "type": "integer",
@@ -157,7 +157,20 @@ class MCPServer:
         elif name == "desktop_run_goal":
             max_steps = args.get("max_steps", 15)
             res = self.agent.run_desktop(goal=args["goal"], max_steps=max_steps)
-            return {"status": "success", "steps_executed": len(res), "completed": any(r.is_goal_satisfied for r in res)}
+            last_step = res[-1] if res else None
+            needs_llm = (last_step.action_type == "escalate_to_llm") if last_step else False
+            return {
+                "status": "escalated_to_llm" if needs_llm else "success",
+                "completed": any(r.is_goal_satisfied for r in res),
+                "steps_executed": len(res),
+                "needs_llm_intervention": needs_llm,
+                "escalation_reason": last_step.target_label if needs_llm else "",
+                "next_hint": (
+                    "Execute one strategic step (e.g. desktop_click_button or desktop_type_text) to break the impasse. "
+                    "Jev will automatically sniff if it can reclaim control on subsequent cycles."
+                    if needs_llm else "Task proceeded normally."
+                ),
+            }
 
         elif name == "browser_run_goal":
             url = args["url"]
