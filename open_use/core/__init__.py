@@ -7,6 +7,11 @@ from .dual_core import (
     BranchHealth,
     ReclaimVerdict,
 )
+from .jev_gate import (
+    JevEnforcementError,
+    JevContext,
+    require_jev_token,
+)
 
 __all__ = [
     "JevClient",
@@ -22,4 +27,7 @@ __all__ = [
     "CapabilityAssessment",
     "BranchHealth",
     "ReclaimVerdict",
+    "JevEnforcementError",
+    "JevContext",
+    "require_jev_token",
 ]

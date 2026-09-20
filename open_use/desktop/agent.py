@@ -15,6 +15,7 @@ from typing import Any, Dict, List, Optional
 from ..core.jev_client import JevClient
 from ..core.jev_judge import JevJudge
 from ..core.dual_core import DualCoreOrchestrator, ControllerMode, CapabilityAssessment, BranchHealth
+from ..core.jev_gate import JevContext
 from .hal import DesktopPlatform, UIElement, get_current_platform
 
 
@@ -160,7 +161,8 @@ class DesktopAgent:
         last_action_name = self.history[-1]["action"] if self.history else "none"
         branch = self.orchestrator.check_branch_health(screen_summary, self.goal, last_action=last_action_name)
         if not branch.on_track and branch.recommended_rollback != "none":
-            self.orchestrator.execute_rollback(branch.recommended_rollback, self.platform)
+            with JevContext.session(step=self.step_count, decision_token=f"rollback_{branch.recommended_rollback}"):
+                self.orchestrator.execute_rollback(branch.recommended_rollback, self.platform)
             # Re-capture normalized screen after rollback
             time.sleep(0.3)
             raw_shot = self.platform.capture_screen()
@@ -177,7 +179,8 @@ class DesktopAgent:
             available_elements_count=len(elements),
         )
         if not capacity.can_handle:
-            print(f"  🛑 [Jev Handover] Jev self-assessed inability to proceed: '{capacity.reason}' (conf={capacity.confidence:.2f}). Escalate to LLM!")
+            conf_val = float(capacity.confidence) if isinstance(capacity.confidence, (int, float)) else 0.0
+            print(f"  🛑 [Jev Handover] Jev self-assessed inability to proceed: '{capacity.reason}' (conf={conf_val:.2f}). Escalate to LLM!")
             return DesktopStepResult(
                 step=self.step_count,
                 action_type="escalate_to_llm",
@@ -249,39 +252,40 @@ class DesktopAgent:
 
         # 5. Native Execution
         if not self.dry_run:
-            if action_type == "paste_and_send":
-                mod_key = "cmd" if sys.platform == "darwin" else "ctrl"
-                self.platform.hotkey([mod_key, "v"])
-                time.sleep(0.4)
-                self.platform.press_key("return")
-                time.sleep(self.click_delay)
-            elif action_type == "type_text":
-                text_match = re.search(r'["\']([^"\']+)["\']', self.goal)
-                text_to_type = text_match.group(1) if text_match else ""
-                if not text_to_type:
-                    for kw in ("输入", "type", "send", "发送"):
-                        if kw in self.goal:
-                            parts = self.goal.split(kw, 1)
-                            if len(parts) > 1 and parts[1].strip():
-                                text_to_type = parts[1].strip().split()[0]
-                                break
-                if text_to_type:
-                    self.platform.type_text(text_to_type)
+            with JevContext.session(step=self.step_count, decision_token=raw_choice):
+                if action_type == "paste_and_send":
+                    mod_key = "cmd" if sys.platform == "darwin" else "ctrl"
+                    self.platform.hotkey([mod_key, "v"])
+                    time.sleep(0.4)
+                    self.platform.press_key("return")
                     time.sleep(self.click_delay)
-            elif action_type == "click" and target_point:
-                self.platform.click(target_point[0], target_point[1])
-                time.sleep(self.click_delay)
-            elif action_type == "press_return":
-                self.platform.press_key("return")
-                time.sleep(self.click_delay)
-            elif action_type == "scroll_down":
-                self.platform.scroll(500, 400, -5)
-                time.sleep(self.click_delay)
-            elif action_type == "scroll_up":
-                self.platform.scroll(500, 400, 5)
-                time.sleep(self.click_delay)
-            elif action_type == "wait":
-                time.sleep(0.8)
+                elif action_type == "type_text":
+                    text_match = re.search(r'["\']([^"\']+)["\']', self.goal)
+                    text_to_type = text_match.group(1) if text_match else ""
+                    if not text_to_type:
+                        for kw in ("输入", "type", "send", "发送"):
+                            if kw in self.goal:
+                                parts = self.goal.split(kw, 1)
+                                if len(parts) > 1 and parts[1].strip():
+                                    text_to_type = parts[1].strip().split()[0]
+                                    break
+                    if text_to_type:
+                        self.platform.type_text(text_to_type)
+                        time.sleep(self.click_delay)
+                elif action_type == "click" and target_point:
+                    self.platform.click(target_point[0], target_point[1])
+                    time.sleep(self.click_delay)
+                elif action_type == "press_return":
+                    self.platform.press_key("return")
+                    time.sleep(self.click_delay)
+                elif action_type == "scroll_down":
+                    self.platform.scroll(500, 400, -5)
+                    time.sleep(self.click_delay)
+                elif action_type == "scroll_up":
+                    self.platform.scroll(500, 400, 5)
+                    time.sleep(self.click_delay)
+                elif action_type == "wait":
+                    time.sleep(0.8)
         else:
             print(f"  [DRY RUN] Would execute action: {action_type} target: '{target_label}' point: {target_point}")
 

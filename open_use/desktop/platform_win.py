@@ -24,8 +24,10 @@ from .hal import DesktopPlatform, UIElement
 
 try:
     from ..core.security import validate_app_name, validate_safe_file_path
+    from ..core.jev_gate import require_jev_token
 except Exception:
     from open_use.core.security import validate_app_name, validate_safe_file_path
+    from open_use.core.jev_gate import require_jev_token
 
 # Try loading RapidOCR
 _HAS_RAPID_OCR = False
@@ -344,6 +346,7 @@ class WinPlatform(DesktopPlatform):
             return user32.GetSystemMetrics(0), user32.GetSystemMetrics(1)
         return (1920, 1080)
 
+    @require_jev_token
     def click(self, x: int, y: int) -> None:
         """Send hardware click via Win32 SendInput with accurate DPI physical coordinate scaling."""
         if sys.platform != "win32":
@@ -376,12 +379,14 @@ class WinPlatform(DesktopPlatform):
         events = (Input * 3)(inp_move, inp_down, inp_up)
         user32.SendInput(3, events, ctypes.sizeof(Input))
 
+    @require_jev_token
     def double_click(self, x: int, y: int) -> None:
         """Send hardware double click."""
         self.click(x, y)
         time.sleep(0.08)
         self.click(x, y)
 
+    @require_jev_token
     def right_click(self, x: int, y: int) -> None:
         """Send hardware right click."""
         if sys.platform != "win32":
@@ -397,6 +402,7 @@ class WinPlatform(DesktopPlatform):
         events = (Input * 3)(inp_move, inp_down, inp_up)
         user32.SendInput(3, events, ctypes.sizeof(Input))
 
+    @require_jev_token
     def type_text(self, text: str) -> None:
         """Type Unicode text natively using Win32 KEYEVENTF_UNICODE."""
         if sys.platform != "win32":
@@ -411,6 +417,7 @@ class WinPlatform(DesktopPlatform):
             user32.SendInput(2, events, ctypes.sizeof(Input))
             time.sleep(0.01)
 
+    @require_jev_token
     def press_key(self, key_name: str) -> None:
         """Press special key via Win32 Virtual Key Code."""
         if sys.platform != "win32":
@@ -453,6 +460,7 @@ class WinPlatform(DesktopPlatform):
             events = (Input * 4)(inp1, inp2, inp3, inp4)
             user32.SendInput(4, events, ctypes.sizeof(Input))
 
+    @require_jev_token
     def hotkey(self, keys: List[str]) -> None:
         """Trigger keyboard shortcut combination on Windows via SendInput."""
         if sys.platform != "win32":
@@ -484,6 +492,7 @@ class WinPlatform(DesktopPlatform):
             events_array = (Input * len(all_events))(*all_events)
             user32.SendInput(len(all_events), events_array, ctypes.sizeof(Input))
 
+    @require_jev_token
     def scroll(self, x: int, y: int, delta: int) -> None:
         """Send mouse wheel scroll event targeting (x, y) coordinates."""
         if sys.platform != "win32":

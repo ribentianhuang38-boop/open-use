@@ -24,8 +24,10 @@ from .hal import DesktopPlatform, UIElement
 
 try:
     from ..core.security import validate_app_name, validate_safe_file_path
+    from ..core.jev_gate import require_jev_token
 except Exception:
     from open_use.core.security import validate_app_name, validate_safe_file_path
+    from open_use.core.jev_gate import require_jev_token
 
 logger = logging.getLogger("open_use.desktop.mac")
 
@@ -229,6 +231,7 @@ class MacPlatform(DesktopPlatform):
 
         return elements
 
+    @require_jev_token
     def click(self, x: int, y: int) -> None:
         """Send native hardware mouse click."""
         if os.path.exists(self.native_bin):
@@ -237,6 +240,7 @@ class MacPlatform(DesktopPlatform):
             script = 'on run argv\nset {x, y} to {item 1 of argv as integer, item 2 of argv as integer}\ntell application "System Events" to click at {x, y}\nend run'
             subprocess.run(["osascript", "-e", script, str(x), str(y)], timeout=5.0, check=False)
 
+    @require_jev_token
     def double_click(self, x: int, y: int) -> None:
         """Send native hardware double click."""
         if os.path.exists(self.native_bin):
@@ -246,11 +250,13 @@ class MacPlatform(DesktopPlatform):
             time.sleep(0.08)
             self.click(x, y)
 
+    @require_jev_token
     def right_click(self, x: int, y: int) -> None:
         """Send native hardware right click."""
         if os.path.exists(self.native_bin):
             subprocess.run([self.native_bin, "right_click", str(x), str(y)], timeout=5.0, check=False)
 
+    @require_jev_token
     def type_text(self, text: str) -> None:
         """Type Unicode text natively into focused window (Zero injection via argv/native binary)."""
         if os.path.exists(self.native_bin):
@@ -260,6 +266,7 @@ class MacPlatform(DesktopPlatform):
             script = 'on run argv\ntell application "System Events" to keystroke (item 1 of argv)\nend run'
             subprocess.run(["osascript", "-e", script, text], timeout=5.0, check=False)
 
+    @require_jev_token
     def press_key(self, key_name: str) -> None:
         """Press special key via key_code."""
         key_codes = {
@@ -278,6 +285,7 @@ class MacPlatform(DesktopPlatform):
                     check=False,
                 )
 
+    @require_jev_token
     def hotkey(self, keys: List[str]) -> None:
         """Trigger keyboard shortcut safely via parameterized AppleScript."""
         modifiers = []
@@ -317,6 +325,7 @@ class MacPlatform(DesktopPlatform):
             script = 'on run argv\nset the clipboard to (POSIX file (item 1 of argv))\nend run'
             subprocess.run(["osascript", "-e", script, abs_path], timeout=5.0, check=True)
 
+    @require_jev_token
     def scroll(self, x: int, y: int, delta: int) -> None:
         """Send native scroll event."""
         if os.path.exists(self.native_bin):

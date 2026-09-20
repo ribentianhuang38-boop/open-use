@@ -20,8 +20,10 @@ from .desktop.hal import get_current_platform
 
 try:
     from .core.security import validate_safe_file_path, validate_safe_url
+    from .core.jev_gate import JevContext
 except Exception:
     from open_use.core.security import validate_safe_file_path, validate_safe_url
+    from open_use.core.jev_gate import JevContext
 
 logger = logging.getLogger("open_use.mcp_server")
 
@@ -233,11 +235,13 @@ class MCPServer:
 
                     if not target:
                         return {"status": "error", "message": f"Button with ID {btn_id} not found"}
-                    self.platform.click(target.center[0], target.center[1])
+                    with JevContext.session(step=1, decision_token=f"mcp_click_{btn_id}"):
+                        self.platform.click(target.center[0], target.center[1])
                     return {"status": "success", "clicked": target.label, "point": target.center}
 
                 elif name == "desktop_type_text":
-                    self.platform.type_text(args["text"])
+                    with JevContext.session(step=1, decision_token="mcp_type_text"):
+                        self.platform.type_text(args["text"])
                     return {"status": "success", "typed": args["text"]}
 
                 elif name == "desktop_copy_file_to_clipboard":

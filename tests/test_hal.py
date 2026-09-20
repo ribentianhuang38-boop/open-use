@@ -55,6 +55,7 @@ class TestHAL(unittest.TestCase):
             self.assertIsInstance(platform, LinuxPlatform)
 
     def test_linux_platform_methods(self):
+        from open_use.core.jev_gate import JevContext
         lp = LinuxPlatform()
         # capture_screen should return a valid file path
         shot = lp.capture_screen()
@@ -65,24 +66,26 @@ class TestHAL(unittest.TestCase):
         elements = lp.detect_ui_elements(shot)
         self.assertIsInstance(elements, list)
 
-        # Mocked execution methods should not throw unhandled exceptions
+        # Mocked execution methods should not throw unhandled exceptions under Jev session
         with patch("subprocess.run") as mock_run:
-            lp.click(100, 200)
-            mock_run.assert_called_with(["xdotool", "mousemove", "100", "200", "click", "1"], timeout=5.0, check=False)
+            with JevContext.bypass_for_test():
+                lp.click(100, 200)
+                mock_run.assert_called_with(["xdotool", "mousemove", "100", "200", "click", "1"], timeout=5.0, check=False)
 
-            lp.type_text("hello")
-            mock_run.assert_called_with(["xdotool", "type", "--", "hello"], timeout=5.0, check=False)
+                lp.type_text("hello")
+                mock_run.assert_called_with(["xdotool", "type", "--", "hello"], timeout=5.0, check=False)
 
-            lp.press_key("return")
-            mock_run.assert_called_with(["xdotool", "key", "return"], timeout=5.0, check=False)
+                lp.press_key("return")
+                mock_run.assert_called_with(["xdotool", "key", "return"], timeout=5.0, check=False)
 
-            lp.hotkey(["ctrl", "c"])
-            mock_run.assert_called_with(["xdotool", "key", "ctrl+c"], timeout=5.0, check=False)
+                lp.hotkey(["ctrl", "c"])
+                mock_run.assert_called_with(["xdotool", "key", "ctrl+c"], timeout=5.0, check=False)
 
     def test_win_platform_mocked(self):
         """Test Windows platform scale attribute and SendInput logic via mocks (I-01, M-04)."""
         import ctypes
         from open_use.desktop.platform_win import WinPlatform
+        from open_use.core.jev_gate import JevContext
         wp = WinPlatform()
         self.assertEqual(wp.scale, 1.0)
 
@@ -91,11 +94,12 @@ class TestHAL(unittest.TestCase):
             with patch.object(ctypes, "windll", create=True) as mock_windll:
                 mock_windll.user32 = mock_user32
                 with patch.object(wp, "_get_screen_dimensions", return_value=(1920, 1080)):
-                    wp.click(100, 200)
-                    self.assertTrue(mock_user32.SendInput.called)
+                    with JevContext.bypass_for_test():
+                        wp.click(100, 200)
+                        self.assertTrue(mock_user32.SendInput.called)
 
-                    wp.scroll(100, 200, 3)
-                    self.assertTrue(mock_user32.SendInput.called)
+                        wp.scroll(100, 200, 3)
+                        self.assertTrue(mock_user32.SendInput.called)
 
 
 if __name__ == "__main__":

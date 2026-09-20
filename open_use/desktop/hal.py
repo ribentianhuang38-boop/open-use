@@ -16,8 +16,10 @@ from typing import Any, Dict, List, Optional, Tuple
 
 try:
     from ..core.security import validate_app_name, validate_key_name, validate_safe_file_path
+    from ..core.jev_gate import require_jev_token, JevEnforcementError
 except Exception:
     from open_use.core.security import validate_app_name, validate_key_name, validate_safe_file_path
+    from open_use.core.jev_gate import require_jev_token, JevEnforcementError
 
 
 @dataclass
@@ -135,22 +137,28 @@ class LinuxPlatform(DesktopPlatform):
         except Exception:
             return []
 
+    @require_jev_token
     def click(self, x: int, y: int) -> None:
         subprocess.run(["xdotool", "mousemove", str(x), str(y), "click", "1"], timeout=5.0, check=False)
 
+    @require_jev_token
     def double_click(self, x: int, y: int) -> None:
         subprocess.run(["xdotool", "mousemove", str(x), str(y), "click", "--repeat", "2", "1"], timeout=5.0, check=False)
 
+    @require_jev_token
     def right_click(self, x: int, y: int) -> None:
         subprocess.run(["xdotool", "mousemove", str(x), str(y), "click", "3"], timeout=5.0, check=False)
 
+    @require_jev_token
     def type_text(self, text: str) -> None:
         subprocess.run(["xdotool", "type", "--", text], timeout=5.0, check=False)
 
+    @require_jev_token
     def press_key(self, key_name: str) -> None:
         safe_key = validate_key_name(key_name)
         subprocess.run(["xdotool", "key", safe_key], timeout=5.0, check=False)
 
+    @require_jev_token
     def hotkey(self, keys: List[str]) -> None:
         safe_keys = [validate_key_name(k) for k in keys]
         subprocess.run(["xdotool", "key", "+".join(safe_keys)], timeout=5.0, check=False)
@@ -159,6 +167,7 @@ class LinuxPlatform(DesktopPlatform):
         safe_path = validate_safe_file_path(file_path)
         subprocess.run(["xclip", "-selection", "clipboard", "-t", "image/png", "-i", str(safe_path)], timeout=5.0, check=False)
 
+    @require_jev_token
     def scroll(self, x: int, y: int, delta: int) -> None:
         btn = "4" if delta > 0 else "5"
         subprocess.run(["xdotool", "click", btn], timeout=5.0, check=False)
