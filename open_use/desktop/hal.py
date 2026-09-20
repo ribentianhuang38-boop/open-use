@@ -61,6 +61,11 @@ class DesktopPlatform(abc.ABC):
         pass
 
     @abc.abstractmethod
+    def hotkey(self, keys: List[str]) -> None:
+        """Trigger a keyboard shortcut combination, e.g. ['cmd', 'v'] or ['ctrl', 'c']."""
+        pass
+
+    @abc.abstractmethod
     def copy_file_to_clipboard(self, file_path: str) -> None:
         """Mount a local file to OS clipboard so Ctrl+V/Cmd+V pastes it as a file/image."""
         pass

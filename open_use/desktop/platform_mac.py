@@ -191,6 +191,34 @@ class MacPlatform(DesktopPlatform):
                     check=False,
                 )
 
+    def hotkey(self, keys: List[str]) -> None:
+        """Trigger keyboard shortcut on macOS via System Events."""
+        modifiers = []
+        target_char = ""
+        for k in keys:
+            kl = k.lower()
+            if kl in ("cmd", "command"):
+                modifiers.append("command down")
+            elif kl in ("ctrl", "control"):
+                modifiers.append("control down")
+            elif kl in ("alt", "option"):
+                modifiers.append("option down")
+            elif kl in ("shift",):
+                modifiers.append("shift down")
+            else:
+                target_char = k
+
+        if not target_char:
+            return
+
+        if modifiers:
+            mod_str = " using {" + ", ".join(modifiers) + "}"
+        else:
+            mod_str = ""
+
+        script = f'tell application "System Events" to keystroke "{target_char}"{mod_str}'
+        subprocess.run(["osascript", "-e", script], check=False)
+
     def copy_file_to_clipboard(self, file_path: str) -> None:
         """Mount file to NSPasteboard."""
         if os.path.exists(self.native_bin):

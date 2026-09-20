@@ -65,16 +65,30 @@ class DesktopAgent:
         return len(self._recent_targets) >= 3 and len(set(self._recent_targets[-3:])) == 1
 
     def _batched_decision_and_safety(self, elements: List[UIElement]) -> Dict[str, Any]:
-        """Prioritize elements by goal semantics, number buttons, and query Jev."""
+        """Prioritize elements by goal semantics using fuzzy matching, number buttons, and query Jev."""
+        import difflib
         goal_lower = self.goal.lower()
+        goal_tokens = [t for t in re.split(r'[\s,，.。!！?？]+', goal_lower) if len(t) >= 2]
 
-        def _score_el(el: UIElement) -> int:
-            lbl = el.label.lower()
-            if lbl and (lbl in goal_lower or any(part in lbl for part in goal_lower.split() if len(part) >= 2)):
-                return 0
+        def _score_el(el: UIElement) -> float:
+            lbl = el.label.lower().strip()
+            if not lbl:
+                return 2.0
+            # 1. Exact substring
+            if lbl in goal_lower or any(t in lbl for t in goal_tokens):
+                return 0.0
+            # 2. Fuzzy similarity (catches OCR character distortions, e.g., 腺 vs 𣊊)
+            max_sim = 0.0
+            for token in goal_tokens:
+                sim = difflib.SequenceMatcher(None, lbl, token).ratio()
+                if sim > max_sim:
+                    max_sim = sim
+            if max_sim >= 0.5:
+                return 0.1 - (max_sim * 0.1)  # High priority between 0.0 and 0.05
+
             if el.category in ("button", "input", "control"):
-                return 1
-            return 2
+                return 1.0
+            return 2.0
 
         prioritized = sorted(elements, key=_score_el)
 
@@ -83,6 +97,7 @@ class DesktopAgent:
             cat_name = el.category.upper()
             criteria[f"btn_{el.id}"] = f"[{el.id}] {cat_name} '{el.label}' at point {el.center}"
 
+        criteria["paste_and_send"] = "Paste current clipboard content (image or text) into focused area and send immediately with Return key"
         criteria["type_text"] = "Type text into the currently focused input field"
         criteria["press_return"] = "Press the Return/Enter key"
         criteria["scroll_down"] = "Scroll down to see more content"
@@ -151,7 +166,7 @@ class DesktopAgent:
         raw_choice = decision.choice if decision else "wait"
 
         # 4. Parse choice
-        if raw_choice in ("type_text", "press_return", "scroll_down", "scroll_up", "wait", "done"):
+        if raw_choice in ("paste_and_send", "type_text", "press_return", "scroll_down", "scroll_up", "wait", "done"):
             action_type = raw_choice
             chosen_element = None
             target_point = None
@@ -177,7 +192,13 @@ class DesktopAgent:
         print(f"  👉 Step {self.step_count}: Decision={raw_choice} -> Action={action_type} Target='{target_label}' Point={target_point}")
 
         # 5. Native Execution
-        if action_type == "click" and target_point:
+        if action_type == "paste_and_send":
+            mod_key = "cmd" if sys.platform == "darwin" else "ctrl"
+            self.platform.hotkey([mod_key, "v"])
+            time.sleep(0.4)
+            self.platform.press_key("return")
+            time.sleep(self.click_delay)
+        elif action_type == "click" and target_point:
             self.platform.click(target_point[0], target_point[1])
             time.sleep(self.click_delay)
         elif action_type == "press_return":

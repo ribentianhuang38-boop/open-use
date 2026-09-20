@@ -439,6 +439,37 @@ class WinPlatform(DesktopPlatform):
             events = (Input * 4)(inp1, inp2, inp3, inp4)
             user32.SendInput(4, events, ctypes.sizeof(Input))
 
+    def hotkey(self, keys: List[str]) -> None:
+        """Trigger keyboard shortcut combination on Windows via SendInput."""
+        if sys.platform != "win32":
+            return
+        user32 = ctypes.windll.user32
+        vk_map = {
+            "ctrl": 0x11, "control": 0x11,
+            "alt": 0x12, "option": 0x12,
+            "shift": 0x10,
+            "win": 0x5B, "cmd": 0x11,  # map cmd to ctrl on Windows
+            "enter": 0x0D, "return": 0x0D,
+            "tab": 0x09, "esc": 0x1B, "escape": 0x1B,
+            "backspace": 0x08, "delete": 0x2E,
+            "space": 0x20,
+        }
+        for ch in "abcdefghijklmnopqrstuvwxyz":
+            vk_map[ch] = ord(ch.upper())
+
+        down_events = []
+        up_events = []
+        for k in keys:
+            vk = vk_map.get(k.lower())
+            if vk:
+                down_events.append(Input(INPUT_KEYBOARD, Input_I(ki=KeyBdInput(vk, 0, 0, 0, None))))
+                up_events.insert(0, Input(INPUT_KEYBOARD, Input_I(ki=KeyBdInput(vk, 0, KEYEVENTF_KEYUP, 0, None))))
+
+        all_events = down_events + up_events
+        if all_events:
+            events_array = (Input * len(all_events))(*all_events)
+            user32.SendInput(len(all_events), events_array, ctypes.sizeof(Input))
+
     def scroll(self, x: int, y: int, delta: int) -> None:
         """Send mouse wheel scroll event."""
         if sys.platform != "win32":
