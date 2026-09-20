@@ -49,8 +49,21 @@ class DesktopPlatform(abc.ABC):
         """Capture the current screen and return the file path."""
         pass
 
+    def capture_window(
+        self,
+        app_name: Optional[str] = None,
+        output_path: Optional[str] = None,
+    ) -> Tuple[str, Tuple[int, int]]:
+        """Capture only target app window (faster, cleaner) and return (filepath, (offset_x, offset_y))."""
+        return self.capture_screen(output_path), (0, 0)
+
     @abc.abstractmethod
-    def detect_ui_elements(self, image_path: str, scale: float = 1.0) -> List[UIElement]:
+    def detect_ui_elements(
+        self,
+        image_path: str,
+        scale: float = 1.0,
+        offset: Tuple[int, int] = (0, 0),
+    ) -> List[UIElement]:
         """Extract text and UI controls from screenshot into numbered elements."""
         pass
 
@@ -89,6 +102,10 @@ class DesktopPlatform(abc.ABC):
         """Mount a local file to OS clipboard so Ctrl+V/Cmd+V pastes it as a file/image."""
         pass
 
+    def set_clipboard_text(self, text: str) -> None:
+        """Set plain text into system clipboard."""
+        pass
+
     @abc.abstractmethod
     def scroll(self, x: int, y: int, delta: int) -> None:
         """Send a native scroll wheel event."""
@@ -113,7 +130,8 @@ class LinuxPlatform(DesktopPlatform):
             img.save(out_file)
         return out_file
 
-    def detect_ui_elements(self, image_path: str, scale: float = 1.0) -> List[UIElement]:
+    def detect_ui_elements(self, image_path: str, scale: float = 1.0, offset: Tuple[int, int] = (0, 0)) -> List[UIElement]:
+        ox, oy = offset
         try:
             from rapidocr_onnxruntime import RapidOCR
             engine = RapidOCR()
@@ -125,7 +143,7 @@ class LinuxPlatform(DesktopPlatform):
                         continue
                     xs = [p[0] for p in box]
                     ys = [p[1] for p in box]
-                    x1, y1, x2, y2 = int(min(xs) / scale), int(min(ys) / scale), int(max(xs) / scale), int(max(ys) / scale)
+                    x1, y1, x2, y2 = int(min(xs) / scale) + ox, int(min(ys) / scale) + oy, int(max(xs) / scale) + ox, int(max(ys) / scale) + oy
                     elements.append(UIElement(
                         id=str(idx + 1),
                         label=text.strip(),
@@ -166,6 +184,9 @@ class LinuxPlatform(DesktopPlatform):
     def copy_file_to_clipboard(self, file_path: str) -> None:
         safe_path = validate_safe_file_path(file_path)
         subprocess.run(["xclip", "-selection", "clipboard", "-t", "image/png", "-i", str(safe_path)], timeout=5.0, check=False)
+
+    def set_clipboard_text(self, text: str) -> None:
+        subprocess.run(["xclip", "-selection", "clipboard"], input=text.encode("utf-8"), timeout=5.0, check=False)
 
     @require_jev_token
     def scroll(self, x: int, y: int, delta: int) -> None:

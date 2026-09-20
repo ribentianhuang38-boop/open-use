@@ -213,13 +213,47 @@ class WinPlatform(DesktopPlatform):
         except Exception:
             return []
 
+    def capture_window(
+        self,
+        app_name: Optional[str] = None,
+        output_path: Optional[str] = None,
+    ) -> Tuple[str, Tuple[int, int]]:
+        """Capture only foreground / target window on Windows, returning (filepath, (offset_x, offset_y))."""
+        rect = self.get_active_window_rect()
+        if rect:
+            left, top, right, bottom = rect
+            w = right - left
+            h = bottom - top
+            if w > 50 and h > 50:
+                import tempfile
+                out_file = output_path or os.path.join(tempfile.gettempdir(), f"openuse_win_{int(time.time()*1000)}.png")
+                Path(out_file).parent.mkdir(parents=True, exist_ok=True)
+                if self._mss:
+                    try:
+                        bbox = {"left": left, "top": top, "width": w, "height": h}
+                        shot = self._mss.grab(bbox)
+                        mss.tools.to_png(shot.rgb, shot.size, output=out_file)
+                        return out_file, (left, top)
+                    except Exception:
+                        pass
+                if _HAS_PIL:
+                    try:
+                        screenshot = ImageGrab.grab(bbox=(left, top, right, bottom))
+                        screenshot.save(out_file)
+                        return out_file, (left, top)
+                    except Exception:
+                        pass
+        return self.capture_screen(output_path), (0, 0)
+
     def detect_ui_elements(
         self,
         image_path: str,
         scale: float = 1.0,
+        offset: Tuple[int, int] = (0, 0),
         active_window_only: bool = False,
     ) -> List[UIElement]:
         """Run RapidOCR + Channel 3 UI container detection with geometric containment fusion."""
+        ox, oy = offset
         elements: List[UIElement] = []
 
         if not self._ocr_engine:
@@ -285,13 +319,13 @@ class WinPlatform(DesktopPlatform):
 
             if matched_container:
                 # Use container bounding box and center
-                final_bbox = list(matched_container)
-                cx = (final_bbox[0] + final_bbox[2]) // 2
-                cy = (final_bbox[1] + final_bbox[3]) // 2
+                final_bbox = [matched_container[0] + ox, matched_container[1] + oy, matched_container[2] + ox, matched_container[3] + oy]
+                cx = (matched_container[0] + matched_container[2]) // 2 + ox
+                cy = (matched_container[1] + matched_container[3]) // 2 + oy
             else:
-                final_bbox = [x1, y1, x2, y2]
-                cx = x1 + w // 2
-                cy = y1 + h // 2
+                final_bbox = [x1 + ox, y1 + oy, x2 + ox, y2 + oy]
+                cx = x1 + w // 2 + ox
+                cy = y1 + h // 2 + oy
 
             category = "button" if any(kw in text_clean for kw in _button_keywords) else "text"
             if "输入" in text_clean or "搜索" in text_clean or "Search" in text_clean:
@@ -327,8 +361,8 @@ class WinPlatform(DesktopPlatform):
                         id=str(count),
                         label="Icon/Button",
                         category="control",
-                        bbox=list(cbox),
-                        center=[(cx1 + cx2) // 2, (cy1 + cy2) // 2],
+                        bbox=[cx1 + ox, cy1 + oy, cx2 + ox, cy2 + oy],
+                        center=[(cx1 + cx2) // 2 + ox, (cy1 + cy2) // 2 + oy],
                     )
                 )
 
@@ -563,6 +597,13 @@ class WinPlatform(DesktopPlatform):
                 kernel32.GlobalFree(h_global)
 
         print(f"Mounted file to Windows Clipboard: {abs_path}")
+
+    def set_clipboard_text(self, text: str) -> None:
+        """Inject Unicode text directly into Windows clipboard."""
+        try:
+            subprocess.run(["clip"], input=text.encode("utf-16le"), timeout=3.0, check=False)
+        except Exception:
+            pass
 
     def activate_app(self, app_name: str) -> None:
         """Bring window containing app_name in its title to front with retained callback reference and name validation."""

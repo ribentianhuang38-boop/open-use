@@ -47,6 +47,7 @@ class DesktopAgent:
         scale: float = 1.0 if sys.platform == "win32" else 2.0,
         enable_judge: bool = True,
         dry_run: bool = False,
+        target_app: Optional[str] = None,
     ):
         self.goal = goal
         self.platform = platform or get_current_platform()
@@ -54,6 +55,18 @@ class DesktopAgent:
         self.click_delay = click_delay
         self.scale = scale
         self.dry_run = dry_run
+        
+        # Auto-infer target app from goal if not explicitly passed
+        if target_app:
+            self.target_app = target_app
+        else:
+            goal_lower = goal.lower()
+            if "qq" in goal_lower:
+                self.target_app = "QQ"
+            elif "wechat" in goal_lower or "微信" in goal_lower:
+                self.target_app = "WeChat"
+            else:
+                self.target_app = None
 
         self.client = JevClient()
         self.judge = JevJudge(client=self.client) if enable_judge else None
@@ -149,10 +162,21 @@ class DesktopAgent:
         self.step_count += 1
         t_start = time.perf_counter()
 
-        # 1. Capture screen & detect UI elements
-        raw_shot = self.platform.capture_screen()
+        # 1. Capture screen (targeted window if available) & detect UI elements
+        if hasattr(self.platform, "capture_window"):
+            cap_res = self.platform.capture_window(self.target_app)
+            if isinstance(cap_res, tuple) and len(cap_res) == 2:
+                raw_shot, offset = cap_res
+            else:
+                raw_shot, offset = cap_res, (0, 0)
+        else:
+            raw_shot, offset = self.platform.capture_screen(), (0, 0)
+
         try:
-            elements = self.platform.detect_ui_elements(raw_shot, scale=self.scale)
+            try:
+                elements = self.platform.detect_ui_elements(raw_shot, scale=self.scale, offset=offset)
+            except TypeError:
+                elements = self.platform.detect_ui_elements(raw_shot, scale=self.scale)
         finally:
             self.platform.cleanup_screenshot(raw_shot)
         screen_summary = " ".join(e.label for e in elements[:35])
@@ -165,9 +189,19 @@ class DesktopAgent:
                 self.orchestrator.execute_rollback(branch.recommended_rollback, self.platform)
             # Re-capture normalized screen after rollback
             time.sleep(0.3)
-            raw_shot = self.platform.capture_screen()
+            if hasattr(self.platform, "capture_window"):
+                cap_res = self.platform.capture_window(self.target_app)
+                if isinstance(cap_res, tuple) and len(cap_res) == 2:
+                    raw_shot, offset = cap_res
+                else:
+                    raw_shot, offset = cap_res, (0, 0)
+            else:
+                raw_shot, offset = self.platform.capture_screen(), (0, 0)
             try:
-                elements = self.platform.detect_ui_elements(raw_shot, scale=self.scale)
+                try:
+                    elements = self.platform.detect_ui_elements(raw_shot, scale=self.scale, offset=offset)
+                except TypeError:
+                    elements = self.platform.detect_ui_elements(raw_shot, scale=self.scale)
             finally:
                 self.platform.cleanup_screenshot(raw_shot)
             screen_summary = " ".join(e.label for e in elements[:35])

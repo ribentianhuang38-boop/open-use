@@ -118,6 +118,39 @@ def _get_browser_ws_url(port: int = _DEFAULT_CDP_PORT) -> str:
 
 
 _req_id = 1
+_IDLE_TIMEOUT_SECONDS = 300.0  # 5 minutes auto-release
+_IDLE_TIMER: Optional[threading.Timer] = None
+
+
+def _reset_idle_timer() -> None:
+    """Reset the 5-minute idle countdown before terminating background Chrome process."""
+    global _IDLE_TIMER
+    with _CDP_LOCK:
+        if _IDLE_TIMER is not None:
+            _IDLE_TIMER.cancel()
+        _IDLE_TIMER = threading.Timer(_IDLE_TIMEOUT_SECONDS, _auto_reap_daemon)
+        _IDLE_TIMER.daemon = True
+        _IDLE_TIMER.start()
+
+
+def _auto_reap_daemon() -> None:
+    """Auto-terminate background Chrome daemon when idle for 5 minutes to release RAM."""
+    global _CHROME_PROCESS, _WS_CONNECTION
+    with _CDP_LOCK:
+        logger.info("[Resource Manager] Chrome daemon idle for 5 minutes. Auto-reaping to release RAM...")
+        if _WS_CONNECTION is not None:
+            try:
+                _WS_CONNECTION.close()
+            except Exception:
+                pass
+            _WS_CONNECTION = None
+        if _CHROME_PROCESS is not None:
+            try:
+                _CHROME_PROCESS.terminate()
+                _CHROME_PROCESS.wait(timeout=2.0)
+            except Exception:
+                pass
+            _CHROME_PROCESS = None
 
 
 def cdp(method: str, session_id: Optional[str] = None, **params) -> Dict[str, Any]:
@@ -157,18 +190,29 @@ def cdp(method: str, session_id: Optional[str] = None, **params) -> Dict[str, An
                 if "error" in data:
                     err = data["error"]
                     raise RuntimeError(f"CDP Error ({err.get('code')}): {err.get('message')}")
+                _reset_idle_timer()
                 return data.get("result", {})
 
         raise TimeoutError(f"CDP response timed out for method: {method}")
 
 
-def close_cdp() -> None:
+def close_cdp(terminate_process: bool = False) -> None:
     """Close the active CDP WebSocket connection cleanly."""
-    global _WS_CONNECTION
+    global _WS_CONNECTION, _CHROME_PROCESS, _IDLE_TIMER
     with _CDP_LOCK:
+        if _IDLE_TIMER is not None:
+            _IDLE_TIMER.cancel()
+            _IDLE_TIMER = None
         if _WS_CONNECTION is not None:
             try:
                 _WS_CONNECTION.close()
             except Exception:
                 pass
             _WS_CONNECTION = None
+        if terminate_process and _CHROME_PROCESS is not None:
+            try:
+                _CHROME_PROCESS.terminate()
+                _CHROME_PROCESS.wait(timeout=2.0)
+            except Exception:
+                pass
+            _CHROME_PROCESS = None
