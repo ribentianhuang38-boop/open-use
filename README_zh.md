@@ -1,6 +1,6 @@
 <div align="center">
 
-# 🌐 OmniUse 💻
+# 🌐 OpenUse 💻
 
 ### 贯通浏览器与桌面原生操作系统的双核自主智能体 (Dual-Core Autonomous Agent)
 
@@ -15,7 +15,7 @@
   <a href="README_zh.md"><b>中文说明</b></a>
 </p>
 
-*跨越 Chrome 网页与原生桌面应用（微信、QQ、Office、Finder、资源管理器）边界，以 50 毫秒级决策速度和节省 98% 视觉 Token 的开销实现真正的端到端自动化。*
+*零认知门槛跨端自动化：跨越 Chrome 网页与原生桌面应用（微信、QQ、Office、Finder、资源管理器）边界，以 50 毫秒级决策速度和节省 98% 视觉 Token 的开销实现真正的端到端自主操作。*
 
 </div>
 
@@ -36,13 +36,13 @@
 
 ## 📊 能力对比矩阵
 
-| 特性 / 指标 | 传统脚本 RPA | Claude Computer Use | Browser-Use | **OmniUse** |
+| 特性 / 指标 | 传统脚本 RPA | Claude Computer Use | Browser-Use | **OpenUse** |
 | :--- | :--- | :--- | :--- | :--- |
 | **单步决策延迟** | 静态死板脚本 | 4,000 ~ 12,000 ms | 1,000 ~ 3,000 ms | **sub-50 ms** (Jev System One) |
 | **单步 Token 消耗** | 0 tokens | ~2,500 tokens / 步 | ~1,200 tokens / 步 | **~40 tokens / 步 (节省 98%)** |
 | **浏览器操控深度**| 脆弱的 Selector | 全屏截图视觉点击 | 原生 CDP 交互 | **原生 CDP + 紧凑编号表** |
 | **桌面原生软件支持**| 仅 Windows (常崩溃) | macOS / Linux (看大图) | ❌ 不支持桌面应用 | **✅ macOS & Windows 原生 HAL** |
-| **跨应用工件管道** | 手写粘合胶水代码 | ❌ 需人工干预切换 | ❌ 仅限纯网页 | **✅ 统一 OmniAgent 自动化流水线** |
+| **跨应用工件管道** | 手写粘合胶水代码 | ❌ 需人工干预切换 | ❌ 仅限纯网页 | **✅ 统一 OpenAgent 自动化流水线** |
 | **标准 MCP 协议** | ❌ 无 | ❌ 自定义私有 API | ⚠️ 实验性脚本 | **✅ 标准 JSON-RPC 2.0 stdio** |
 
 ---
@@ -52,12 +52,12 @@
 ```mermaid
 graph TB
     subgraph Macro [宏观调度层: Macro Orchestrator]
-        User[用户任务目标 / MCP Client] -->|自然语言| OmniAgent[OmniAgent 双核调度总控]
+        User[用户任务目标 / MCP Client] -->|自然语言| OpenAgent[OpenAgent 双核调度总控]
     end
 
     subgraph Router [智能领域路由器]
-        OmniAgent -->|识别为网页 URL/DOM| BrowserCore[Browser 引擎: Chrome DevTools Protocol]
-        OmniAgent -->|识别为桌面 App/文件操作| DesktopCore[Desktop 引擎: 硬件抽象层 HAL]
+        OpenAgent -->|识别为网页 URL/DOM| BrowserCore[Browser 引擎: Chrome DevTools Protocol]
+        OpenAgent -->|识别为桌面 App/文件操作| DesktopCore[Desktop 引擎: 硬件抽象层 HAL]
     end
 
     subgraph Perception [端侧极速感知层]
@@ -83,8 +83,8 @@ graph TB
 
 ```bash
 # 克隆仓库
-git clone https://github.com/ribentianhuang38-boop/omni-use.git
-cd omni-use
+git clone https://github.com/ribentianhuang38-boop/open-use.git
+cd open-use
 
 # 以可编辑模式安装核心包
 pip install -e .
@@ -110,26 +110,26 @@ cp .env.example .env
 
 ```bash
 # 1. 桌面原生模式（自动适配 macOS 或 Windows）
-omni --mode desktop --goal "在 QQ 中把文件 /tmp/report.pdf 发送给项目群"
+openuse --mode desktop --goal "在 QQ 中把文件 /tmp/report.pdf 发送给项目群"
 
 # 2. 浏览器模式
-omni --mode browser --url "https://portal.example.com" --goal "导出本季度财务报表"
+openuse --mode browser --url "https://portal.example.com" --goal "导出本季度财务报表"
 
 # 3. 智能双核自适应模式
-omni --goal "从 https://analytics.company.com 下载最新指标并粘贴进微信聊天框"
+openuse --goal "从 https://analytics.company.com 下载最新指标并粘贴进微信聊天框"
 ```
 
 ### Python API 代码集成
 
 ```python
-from omni_use import OmniAgent
+from open_use import OpenAgent
 
-agent = OmniAgent()
+agent = OpenAgent()
 
 # 执行跨端复合流水线任务:
 # 1. 网页抓取或下载
 agent.run_browser(
-    url="https://github.com/ribentianhuang38-boop/omni-use",
+    url="https://github.com/ribentianhuang38-boop/open-use",
     goal="给该仓库点 Star 并复制 Clone 地址"
 )
 
@@ -143,11 +143,11 @@ agent.run_desktop(
 
 ## 🔌 Model Context Protocol (MCP) Server 配置
 
-OmniUse 暴露了 7 个符合 **Model Context Protocol (JSON-RPC 2.0)** 标准的高性能工具，可直接接入 Claude Desktop、Cursor 等大模型宿主环境。
+OpenUse 暴露了 7 个符合 **Model Context Protocol (JSON-RPC 2.0)** 标准的高性能工具，可直接接入 Claude Desktop、Cursor 等大模型宿主环境。
 
 ### 启动 MCP Server
 ```bash
-omni --mcp
+openuse --mcp
 # 或: python run.py --mcp
 ```
 
@@ -157,8 +157,8 @@ omni --mcp
 ```json
 {
   "mcpServers": {
-    "omni-use": {
-      "command": "omni-use",
+    "open-use": {
+      "command": "open-use",
       "args": ["--mcp"],
       "env": {
         "JEV_API_KEY": "your_typesafe_jev_key"
@@ -174,9 +174,9 @@ omni --mcp
 ```json
 {
   "mcpServers": {
-    "omni-use": {
+    "open-use": {
       "command": "python",
-      "args": ["-m", "omni_use.mcp_server"],
+      "args": ["-m", "open_use.mcp_server"],
       "env": {
         "JEV_API_KEY": "your_typesafe_jev_key"
       }
@@ -189,7 +189,7 @@ omni --mcp
 
 | 工具名称 | 参数 | 功能说明 |
 | :--- | :--- | :--- |
-| `omni_run` | `goal: str` | 智能双核跨端自动化，自动流转网页与桌面 |
+| `open_run` | `goal: str` | 智能双核跨端自动化，自动流转网页与桌面 |
 | `browser_run_goal` | `url: str, goal: str` | CDP 极速网页自动化，0 视觉 Token 损耗 |
 | `desktop_run_goal` | `goal: str, max_steps: int`| 跨平台桌面原生控制（本地 SoM 神经感知 + Jev 决策） |
 | `desktop_get_buttons`| 无 | 提取当前屏幕结构化交互按钮列表 `[1], [2], [3]` |

@@ -1,4 +1,4 @@
-"""Model Context Protocol (MCP) Server for OmniUse.
+"""Model Context Protocol (MCP) Server for OpenUse.
 
 Exposes dual-core Desktop and Browser automation tools via standard JSON-RPC 2.0 stdio.
 Compatible with Claude Desktop, Cursor, Windsurf, Zed, and Antigravity.
@@ -12,7 +12,7 @@ import sys
 import traceback
 from typing import Any, Dict, List, Optional
 
-from .agent import OmniAgent
+from .agent import OpenAgent, OmniAgent
 from .desktop.hal import get_current_platform
 
 
@@ -20,14 +20,14 @@ class MCPServer:
     """Standard MCP stdio server implementation (JSON-RPC 2.0)."""
 
     def __init__(self):
-        self.agent = OmniAgent()
+        self.agent = OpenAgent()
         self.platform = get_current_platform()
 
     def get_tools_manifest(self) -> List[Dict[str, Any]]:
         """Return schema for all exposed tools."""
         return [
             {
-                "name": "omni_run",
+                "name": "open_run",
                 "description": "Execute a high-level dual-core autonomous task, automatically coordinating between Desktop apps and Browser.",
                 "inputSchema": {
                     "type": "object",
@@ -35,6 +35,20 @@ class MCPServer:
                         "goal": {
                             "type": "string",
                             "description": "Natural language task goal, e.g., 'https://example.com download report and send via QQ'",
+                        },
+                    },
+                    "required": ["goal"],
+                },
+            },
+            {
+                "name": "omni_run",
+                "description": "Alias for open_run (backwards compatibility).",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "goal": {
+                            "type": "string",
+                            "description": "Natural language task goal",
                         },
                     },
                     "required": ["goal"],
@@ -136,7 +150,7 @@ class MCPServer:
 
     def handle_tool_call(self, name: str, args: Dict[str, Any]) -> Any:
         """Dispatch tool calls to corresponding engine."""
-        if name == "omni_run":
+        if name in ("open_run", "omni_run"):
             res = self.agent.run(goal=args["goal"])
             return {"status": "success", "result": str(res)}
 
@@ -188,7 +202,7 @@ class MCPServer:
 
     def run_stdio(self) -> None:
         """Run standard MCP JSON-RPC stdio event loop."""
-        sys.stderr.write("OmniUse MCP Server started (stdio mode)\n")
+        sys.stderr.write("OpenUse MCP Server started (stdio mode)\n")
         sys.stderr.flush()
 
         while True:
@@ -219,8 +233,8 @@ class MCPServer:
                             "tools": {},
                         },
                         "serverInfo": {
-                            "name": "omni-use",
-                            "version": "1.0.0",
+                            "name": "open-use",
+                            "version": "0.1.0",
                         },
                     },
                 }

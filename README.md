@@ -1,6 +1,6 @@
 <div align="center">
 
-# 🌐 OmniUse 💻
+# 🌐 OpenUse 💻
 
 ### The Dual-Core Autonomous Agent Bridging Browser & Desktop Worlds
 
@@ -15,7 +15,7 @@
   <a href="README_zh.md"><b>中文说明</b></a>
 </p>
 
-*Execute multi-step automation spanning Google Chrome and native desktop applications (WeChat, QQ, Office, Finder, Explorer) at sub-second speeds with 98% lower cloud token overhead.*
+*Zero-learning-curve dual-core automation: seamlessly spans Google Chrome and native desktop applications (WeChat, QQ, Office, Finder, Explorer) at sub-second speeds with 98% lower cloud token overhead.*
 
 </div>
 
@@ -36,13 +36,13 @@
 
 ## 📊 Comparison Matrix
 
-| Feature / Capability | Traditional RPA | Claude Computer Use | Browser-Use | **OmniUse** |
+| Feature / Capability | Traditional RPA | Claude Computer Use | Browser-Use | **OpenUse** |
 | :--- | :--- | :--- | :--- | :--- |
 | **Decision Latency** | Static scripts | 4,000 ~ 12,000 ms | 1,000 ~ 3,000 ms | **sub-50 ms** (Jev System One) |
 | **Cloud Token Burn** | 0 tokens | ~2,500 tokens / step | ~1,200 tokens / step | **~40 tokens / step (98% drop)** |
 | **Browser Execution**| Fragile selectors | Full-screen vision clicks | Native CDP DOM | **Native CDP DOM + Numbered Table** |
 | **Desktop Apps** | Windows only (fragile) | macOS / Linux (Vision) | ❌ Not supported | **✅ macOS & Windows (Native HAL)** |
-| **Cross-Boundary Handoff**| Custom glue code | ❌ Manual switching | ❌ Web-only | **✅ Unified OmniAgent Pipeline** |
+| **Cross-Boundary Handoff**| Custom glue code | ❌ Manual switching | ❌ Web-only | **✅ Unified OpenAgent Pipeline** |
 | **MCP Integration** | ❌ No | ❌ Custom API | ⚠️ Experimental | **✅ Standard JSON-RPC 2.0 stdio** |
 
 ---
@@ -52,12 +52,12 @@
 ```mermaid
 graph TB
     subgraph Macro [Macro Orchestrator Layer]
-        User[User Goal / MCP Client] -->|Natural Language| OmniAgent[OmniAgent Dual-Core Orchestrator]
+        User[User Goal / MCP Client] -->|Natural Language| OpenAgent[OpenAgent Dual-Core Orchestrator]
     end
 
     subgraph Router [Intelligent Domain Router]
-        OmniAgent -->|Detect Web URL / Domain| BrowserCore[Browser Engine: Chrome DevTools Protocol]
-        OmniAgent -->|Detect Native App / File Action| DesktopCore[Desktop Engine: Hardware Abstraction Layer]
+        OpenAgent -->|Detect Web URL / Domain| BrowserCore[Browser Engine: Chrome DevTools Protocol]
+        OpenAgent -->|Detect Native App / File Action| DesktopCore[Desktop Engine: Hardware Abstraction Layer]
     end
 
     subgraph Perception [Local Ultra-Fast Perception]
@@ -83,8 +83,8 @@ graph TB
 
 ```bash
 # Clone repository
-git clone https://github.com/ribentianhuang38-boop/omni-use.git
-cd omni-use
+git clone https://github.com/ribentianhuang38-boop/open-use.git
+cd open-use
 
 # Install in editable mode with core dependencies
 pip install -e .
@@ -110,26 +110,26 @@ cp .env.example .env
 
 ```bash
 # 1. Desktop Mode (Auto-detects macOS or Windows)
-omni --mode desktop --goal "Open QQ and send /tmp/report.pdf to team chat"
+openuse --mode desktop --goal "Open QQ and send /tmp/report.pdf to team chat"
 
 # 2. Browser Mode
-omni --mode browser --url "https://portal.example.com" --goal "Export Q3 financial sheet"
+openuse --mode browser --url "https://portal.example.com" --goal "Export Q3 financial sheet"
 
 # 3. Smart Dual-Core Auto Mode
-omni --goal "Download monthly metrics from https://analytics.company.com and paste into WeChat"
+openuse --goal "Download monthly metrics from https://analytics.company.com and paste into WeChat"
 ```
 
 ### Python SDK
 
 ```python
-from omni_use import OmniAgent
+from open_use import OpenAgent
 
-agent = OmniAgent()
+agent = OpenAgent()
 
 # Run a dual-core chained workflow:
 # 1. Fetch file from web
 agent.run_browser(
-    url="https://github.com/ribentianhuang38-boop/omni-use",
+    url="https://github.com/ribentianhuang38-boop/open-use",
     goal="Star this repository and copy the clone URL"
 )
 
@@ -143,11 +143,11 @@ agent.run_desktop(
 
 ## 🔌 Model Context Protocol (MCP) Server
 
-OmniUse exposes 7 high-performance tools conforming to the official **Model Context Protocol (JSON-RPC 2.0)** standard.
+OpenUse exposes 7 high-performance tools conforming to the official **Model Context Protocol (JSON-RPC 2.0)** standard.
 
 ### Launch MCP Server
 ```bash
-omni --mcp
+openuse --mcp
 # or: python run.py --mcp
 ```
 
@@ -157,8 +157,8 @@ Add to `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS)
 ```json
 {
   "mcpServers": {
-    "omni-use": {
-      "command": "omni-use",
+    "open-use": {
+      "command": "open-use",
       "args": ["--mcp"],
       "env": {
         "JEV_API_KEY": "your_typesafe_jev_key"
@@ -174,9 +174,9 @@ Add to `.cursor/mcp.json`:
 ```json
 {
   "mcpServers": {
-    "omni-use": {
+    "open-use": {
       "command": "python",
-      "args": ["-m", "omni_use.mcp_server"],
+      "args": ["-m", "open_use.mcp_server"],
       "env": {
         "JEV_API_KEY": "your_typesafe_jev_key"
       }
@@ -189,7 +189,7 @@ Add to `.cursor/mcp.json`:
 
 | Tool | Parameters | Description |
 | :--- | :--- | :--- |
-| `omni_run` | `goal: str` | Smart dual-core auto-dispatch across browser and native apps |
+| `open_run` | `goal: str` | Smart dual-core auto-dispatch across browser and native apps |
 | `browser_run_goal` | `url: str, goal: str` | Deep CDP web automation without cloud image token burn |
 | `desktop_run_goal` | `goal: str, max_steps: int`| OS-level automation via local SoM perception and Jev |
 | `desktop_get_buttons`| `none` | Return numbered interactive buttons `[1], [2], [3]` on screen |

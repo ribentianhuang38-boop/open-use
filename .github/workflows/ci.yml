@@ -32,10 +32,10 @@ jobs:
     - name: Lint and Syntax check
       run: |
         python -m py_compile run.py
-        python -m py_compile omni_use/*.py
-        python -m py_compile omni_use/core/*.py
-        python -m py_compile omni_use/desktop/*.py
-        python -m py_compile omni_use/browser/*.py
+        python -m py_compile open_use/*.py
+        python -m py_compile open_use/core/*.py
+        python -m py_compile open_use/desktop/*.py
+        python -m py_compile open_use/browser/*.py
 
     - name: Verify CLI Help
       run: |
