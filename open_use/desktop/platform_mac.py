@@ -22,10 +22,12 @@ class MacPlatform(DesktopPlatform):
     """Production-grade macOS Desktop Automation Platform."""
 
     def __init__(self):
-        # Locate precompiled binaries
-        scripts_dir = Path("/Users/wyatt/.gemini/config/skills/computer-use/scripts")
-        self.ocr_bin = str(scripts_dir / "ocr_detector")
-        self.native_bin = str(scripts_dir / "native_events")
+        # Locate precompiled binaries (checks package bin, user home, or falls back to system)
+        local_bin = Path(__file__).resolve().parent.parent / "bin"
+        user_skills = Path.home() / ".gemini/config/skills/computer-use/scripts"
+
+        self.ocr_bin = str(local_bin / "ocr_detector") if (local_bin / "ocr_detector").exists() else str(user_skills / "ocr_detector")
+        self.native_bin = str(local_bin / "native_events") if (local_bin / "native_events").exists() else str(user_skills / "native_events")
 
     def capture_screen(self, output_path: Optional[str] = None) -> str:
         """Capture screen using native screencapture."""
