@@ -2,12 +2,18 @@
 
 import hashlib
 import json
+import logging
 import sys
 import time
 from pathlib import Path
 
-from browser_harness.admin import ensure_daemon
-from browser_harness.helpers import cdp
+try:
+    from browser_harness.admin import ensure_daemon
+    from browser_harness.helpers import cdp
+except ImportError:
+    from .cdp_client import ensure_daemon, cdp
+
+logger = logging.getLogger("open_use.browser")
 
 # Atomically read visible content and controls, preserving actual DOM node identity.
 READ_STATE = Path(__file__).with_name("snapshot.js").read_text()
@@ -20,17 +26,23 @@ class StalePage(ValueError):
 class Browser:
     def __init__(self, url):
         ensure_daemon()
-        self.target = cdp("Target.createTarget", url="about:blank", background=True)["targetId"]
-        self.session = cdp("Target.attachToTarget", targetId=self.target, flatten=True)["sessionId"]
-        self.call("Emulation.setDeviceMetricsOverride", width=1120, height=780, deviceScaleFactor=1, mobile=False)
-        # Keep rAF/menus rendering in an owned background tab, without activating the user's Chrome tab.
-        self.call("Emulation.setFocusEmulationEnabled", enabled=True)
-        self.call("Page.navigate", url=url)
-        deadline = time.monotonic() + 15
-        while time.monotonic() < deadline:
-            if self.evaluate("document.readyState") == "complete":
-                break
-            time.sleep(0.02)
+        self.target = None
+        self.session = None
+        try:
+            self.target = cdp("Target.createTarget", url="about:blank", background=True)["targetId"]
+            self.session = cdp("Target.attachToTarget", targetId=self.target, flatten=True)["sessionId"]
+            self.call("Emulation.setDeviceMetricsOverride", width=1120, height=780, deviceScaleFactor=1, mobile=False)
+            # Keep rAF/menus rendering in an owned background tab, without activating the user's Chrome tab.
+            self.call("Emulation.setFocusEmulationEnabled", enabled=True)
+            self.call("Page.navigate", url=url)
+            deadline = time.monotonic() + 15
+            while time.monotonic() < deadline:
+                if self.evaluate("document.readyState") == "complete":
+                    break
+                time.sleep(0.02)
+        except Exception:
+            self.close()
+            raise
 
     def call(self, method, **params):
         return cdp(method, session_id=self.session, **params)
@@ -49,7 +61,8 @@ class Browser:
                 self.call(
                     "Runtime.evaluate",
                     expression="""(action => new Promise(resolve => {
-                      const field=window.__jevFast?.nodes.get(action.node);
+                      const c = window[Symbol.for('__openuse_jev_private__')] || window.__jevFast;
+                      const field = c?.nodes.get(action.node);
                       const autocomplete=action.kind==='fill' && field?.getAttribute('role')==='combobox';
                       let frames=0, stopped=false;
                       const finish=()=>{stopped=true;resolve()};
@@ -91,7 +104,7 @@ class Browser:
             if type(node) is not int:
                 return False
             current = self.evaluate(
-                "(() => { const c=window.__jevFast; "
+                "(() => { const c = window[Symbol.for('__openuse_jev_private__')] || window.__jevFast; "
                 f"return c ? [c.pageKey(),c.guard(c.nodes.get({node}))] : null; }})()"
             )
             return current == [page["page_key"], page["guards"].get(str(node))]
@@ -142,7 +155,8 @@ def browser_operation(request):
                 raise ValueError("Invalid observed node")
             # Code-owned node IDs refer to actual observed elements, never model-generated selectors.
             target = evaluate("""(action => {
-              const e=window.__jevFast?.nodes.get(action.node);
+              const c = window[Symbol.for('__openuse_jev_private__')] || window.__jevFast;
+              const e = c?.nodes.get(action.node);
               if (!e?.isConnected || e.matches(':disabled') || e.closest('[aria-disabled="true"],[inert]') ||
                   !e.checkVisibility({checkOpacity:true,checkVisibilityCSS:true})) return null;
               if (action.kind==='fill' && (e.readOnly || e.getAttribute('aria-readonly')==='true')) return null;
@@ -188,6 +202,11 @@ def browser_operation(request):
     info = evaluate(READ_STATE)
     if info is None:
         raise StalePage("Document is navigating")
+    if info.get("omitted_actions", 0) > 0:
+        logger.warning(
+            f"Page contains {info['omitted_actions']} interactive elements beyond the 250 element limit. "
+            "Consider scrolling to access deeper elements."
+        )
     info["fingerprint"] = fingerprint(info)
     if request.get("screenshot", True):
         info["screenshot"] = call("Page.captureScreenshot", format="jpeg", quality=72)["data"]

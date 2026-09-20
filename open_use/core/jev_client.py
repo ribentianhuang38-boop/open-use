@@ -186,17 +186,20 @@ class JevClient:
         for attempt in range(3):
             try:
                 response = self._client.post(url, json=payload, headers=headers)
-            except httpx.HTTPError as exc:
+            except (httpx.ConnectError, httpx.ConnectTimeout) as exc:
                 if attempt == 2:
                     raise RuntimeError(f"TypeSafe connection failed: {exc}") from exc
                 time.sleep(0.5 * 2**attempt)
                 continue
+            except httpx.HTTPError as exc:
+                raise RuntimeError(f"TypeSafe request failed: {exc}") from exc
 
             if response.status_code in {429, 502, 503, 529} and attempt < 2:
                 time.sleep(0.5 * 2**attempt)
                 continue
 
             if response.is_error:
+
                 raise RuntimeError(
                     f"TypeSafe API returned HTTP {response.status_code}: {response.text}"
                 )

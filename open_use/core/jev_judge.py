@@ -16,6 +16,15 @@ try:
 except ImportError:
     from jev_client import JevClient, JevResponse
 
+try:
+    from ..browser.questions import JUDGE_GOAL
+except Exception:
+    try:
+        from open_use.browser.questions import JUDGE_GOAL
+    except Exception:
+        JUDGE_GOAL = "Act as an objective quality judge. Evaluate if the page visibly and completely satisfies the user's goal."
+
+
 
 @dataclass
 class GoalVerdict:
@@ -104,6 +113,7 @@ class JevJudge:
                 "instructions": {
                     "goal": goal,
                     "rules": (
+                        f"{JUDGE_GOAL}\n"
                         "Be a strict and objective evaluator. Do not accept a file picker open as finished. "
                         "Do not accept typing text without sending as finished when the goal is to send."
                     ),

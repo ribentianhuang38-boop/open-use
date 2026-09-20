@@ -11,6 +11,7 @@ import logging
 import os
 import sys
 import threading
+import time
 import traceback
 from typing import Any, Dict, List, Optional
 
@@ -27,6 +28,8 @@ class MCPServer:
         self.agent = OpenAgent()
         self.platform = get_current_platform()
         self._lock = threading.Lock()
+        self._last_elements: Dict[str, Any] = {}
+        self._last_shot_time: float = 0.0
 
     def get_tools_manifest(self) -> List[Dict[str, Any]]:
         """Return schema for all exposed tools."""
@@ -192,6 +195,8 @@ class MCPServer:
                 try:
                     scale = 1.0 if sys.platform == "win32" else 2.0
                     elements = self.platform.detect_ui_elements(shot, scale=scale)
+                    self._last_elements = {el.id: el for el in elements}
+                    self._last_shot_time = time.time()
                     return {
                         "total": len(elements),
                         "buttons": [
@@ -204,17 +209,27 @@ class MCPServer:
 
             elif name == "desktop_click_button":
                 btn_id = str(args["button_id"]).replace("btn_", "").strip()
-                shot = self.platform.capture_screen()
-                try:
-                    scale = 1.0 if sys.platform == "win32" else 2.0
-                    elements = self.platform.detect_ui_elements(shot, scale=scale)
-                    target = next((e for e in elements if e.id == btn_id), None)
-                    if not target:
-                        return {"status": "error", "message": f"Button with ID {btn_id} not found"}
-                    self.platform.click(target.center[0], target.center[1])
-                    return {"status": "success", "clicked": target.label, "point": target.center}
-                finally:
-                    self.platform.cleanup_screenshot(shot)
+                # 1. Check recent cache (within 15 seconds) to prevent TOCTOU re-detection drift
+                target = None
+                if (time.time() - self._last_shot_time < 15.0) and (btn_id in self._last_elements):
+                    target = self._last_elements[btn_id]
+
+                # 2. If not found in cache, fallback to fresh capture
+                if not target:
+                    shot = self.platform.capture_screen()
+                    try:
+                        scale = 1.0 if sys.platform == "win32" else 2.0
+                        elements = self.platform.detect_ui_elements(shot, scale=scale)
+                        self._last_elements = {el.id: el for el in elements}
+                        self._last_shot_time = time.time()
+                        target = next((e for e in elements if e.id == btn_id), None)
+                    finally:
+                        self.platform.cleanup_screenshot(shot)
+
+                if not target:
+                    return {"status": "error", "message": f"Button with ID {btn_id} not found"}
+                self.platform.click(target.center[0], target.center[1])
+                return {"status": "success", "clicked": target.label, "point": target.center}
 
             elif name == "desktop_type_text":
                 self.platform.type_text(args["text"])
@@ -259,6 +274,11 @@ class MCPServer:
             req_id = req.get("id")
             method = req.get("method")
             params = req.get("params", {})
+
+            # JSON-RPC 2.0: A Notification is a Request object without an 'id' member.
+            # The Server MUST NOT reply to a Notification.
+            if ("id" not in req) or (req_id is None):
+                continue
 
             # MCP Protocol Handlers
             if method == "initialize":

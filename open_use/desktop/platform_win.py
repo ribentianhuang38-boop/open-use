@@ -73,7 +73,7 @@ if sys.platform == "win32":
         except Exception:
             pass
 
-    PUL = ctypes.POINTER(ctypes.c_ulong)
+    PUL = ctypes.c_size_t
 
     class KeyBdInput(ctypes.Structure):
         _fields_ = [
@@ -327,38 +327,45 @@ class WinPlatform(DesktopPlatform):
         return elements
 
     def _get_screen_dimensions(self) -> Tuple[int, int]:
-        """Get primary monitor resolution in true physical/DPI-aware coordinates."""
+        """Get virtual desktop resolution in true physical/DPI-aware coordinates."""
         if sys.platform == "win32":
             user32 = ctypes.windll.user32
+            # SM_CXVIRTUALSCREEN = 78, SM_CYVIRTUALSCREEN = 79
+            vw = user32.GetSystemMetrics(78)
+            vh = user32.GetSystemMetrics(79)
+            if vw > 0 and vh > 0:
+                return vw, vh
             return user32.GetSystemMetrics(0), user32.GetSystemMetrics(1)
         return (1920, 1080)
 
     def click(self, x: int, y: int) -> None:
-        """Send hardware click via Win32 SendInput."""
+        """Send hardware click via Win32 SendInput with accurate DPI physical coordinate scaling."""
         if sys.platform != "win32":
             return
 
         sw, sh = self._get_screen_dimensions()
-        # Convert to normalized coordinates (0 to 65535)
-        nx = int(x * 65535 / sw)
-        ny = int(y * 65535 / sh)
+        # Convert logical coordinates to physical pixels using scale before normalization
+        px = int(x * self.scale)
+        py = int(y * self.scale)
+        nx = int(px * 65535 / sw)
+        ny = int(py * 65535 / sh)
 
         user32 = ctypes.windll.user32
 
         # 1. Move
         inp_move = Input()
         inp_move.type = INPUT_MOUSE
-        inp_move.ii.mi = MouseInput(nx, ny, 0, MOUSEEVENTF_MOVE | MOUSEEVENTF_ABSOLUTE, 0, None)
+        inp_move.ii.mi = MouseInput(nx, ny, 0, MOUSEEVENTF_MOVE | MOUSEEVENTF_ABSOLUTE, 0, 0)
 
         # 2. Down
         inp_down = Input()
         inp_down.type = INPUT_MOUSE
-        inp_down.ii.mi = MouseInput(nx, ny, 0, MOUSEEVENTF_LEFTDOWN | MOUSEEVENTF_ABSOLUTE, 0, None)
+        inp_down.ii.mi = MouseInput(nx, ny, 0, MOUSEEVENTF_LEFTDOWN | MOUSEEVENTF_ABSOLUTE, 0, 0)
 
         # 3. Up
         inp_up = Input()
         inp_up.type = INPUT_MOUSE
-        inp_up.ii.mi = MouseInput(nx, ny, 0, MOUSEEVENTF_LEFTUP | MOUSEEVENTF_ABSOLUTE, 0, None)
+        inp_up.ii.mi = MouseInput(nx, ny, 0, MOUSEEVENTF_LEFTUP | MOUSEEVENTF_ABSOLUTE, 0, 0)
 
         events = (Input * 3)(inp_move, inp_down, inp_up)
         user32.SendInput(3, events, ctypes.sizeof(Input))
@@ -472,17 +479,24 @@ class WinPlatform(DesktopPlatform):
             user32.SendInput(len(all_events), events_array, ctypes.sizeof(Input))
 
     def scroll(self, x: int, y: int, delta: int) -> None:
-        """Send mouse wheel scroll event."""
+        """Send mouse wheel scroll event targeting (x, y) coordinates."""
         if sys.platform != "win32":
             return
+        sw, sh = self._get_screen_dimensions()
+        px = int(x * self.scale)
+        py = int(y * self.scale)
+        nx = int(px * 65535 / sw)
+        ny = int(py * 65535 / sh)
+
         user32 = ctypes.windll.user32
-        # delta: positive for up, negative for down
+        inp_move = Input(INPUT_MOUSE, Input_I(mi=MouseInput(nx, ny, 0, MOUSEEVENTF_MOVE | MOUSEEVENTF_ABSOLUTE, 0, 0)))
         wheel_amount = delta * 120
-        inp = Input(INPUT_MOUSE, Input_I(mi=MouseInput(0, 0, wheel_amount, MOUSEEVENTF_WHEEL, 0, None)))
-        user32.SendInput(1, (Input * 1)(inp), ctypes.sizeof(Input))
+        inp_scroll = Input(INPUT_MOUSE, Input_I(mi=MouseInput(0, 0, wheel_amount, MOUSEEVENTF_WHEEL, 0, 0)))
+        events = (Input * 2)(inp_move, inp_scroll)
+        user32.SendInput(2, events, ctypes.sizeof(Input))
 
     def copy_file_to_clipboard(self, file_path: str) -> None:
-        """Mount file to Windows Clipboard using CF_HDROP structure."""
+        """Mount file to Windows Clipboard using CF_HDROP structure with leak-proof cleanup."""
         if sys.platform != "win32":
             return
 
@@ -505,24 +519,39 @@ class WinPlatform(DesktopPlatform):
         total_size = ctypes.sizeof(DROPFILES) + len(file_bytes)
 
         h_global = kernel32.GlobalAlloc(GHND, total_size)
-        ptr = kernel32.GlobalLock(h_global)
+        if not h_global:
+            raise MemoryError("GlobalAlloc failed for clipboard data.")
 
-        df = DROPFILES()
-        df.pFiles = ctypes.sizeof(DROPFILES)
-        df.fWide = True
+        try:
+            ptr = kernel32.GlobalLock(h_global)
+            if not ptr:
+                raise MemoryError("GlobalLock failed.")
+            df = DROPFILES()
+            df.pFiles = ctypes.sizeof(DROPFILES)
+            df.fWide = True
+            ctypes.memmove(ptr, ctypes.byref(df), ctypes.sizeof(DROPFILES))
+            ctypes.memmove(ptr + ctypes.sizeof(DROPFILES), file_bytes, len(file_bytes))
+            kernel32.GlobalUnlock(h_global)
 
-        ctypes.memmove(ptr, ctypes.byref(df), ctypes.sizeof(DROPFILES))
-        ctypes.memmove(ptr + ctypes.sizeof(DROPFILES), file_bytes, len(file_bytes))
-        kernel32.GlobalUnlock(h_global)
+            if not user32.OpenClipboard(None):
+                raise RuntimeError("OpenClipboard failed.")
+            try:
+                user32.EmptyClipboard()
+                if not user32.SetClipboardData(CF_HDROP, h_global):
+                    raise RuntimeError("SetClipboardData failed.")
+                # When SetClipboardData succeeds, Windows OS takes ownership of h_global
+                h_global = None
+            finally:
+                user32.CloseClipboard()
+        finally:
+            # If clipboard set failed or exception raised before OS took ownership, free memory
+            if h_global:
+                kernel32.GlobalFree(h_global)
 
-        user32.OpenClipboard(None)
-        user32.EmptyClipboard()
-        user32.SetClipboardData(CF_HDROP, h_global)
-        user32.CloseClipboard()
         print(f"Mounted file to Windows Clipboard: {abs_path}")
 
     def activate_app(self, app_name: str) -> None:
-        """Bring window containing app_name in its title to front."""
+        """Bring window containing app_name in its title to front with retained callback reference."""
         if sys.platform != "win32":
             return
         user32 = ctypes.windll.user32
@@ -540,4 +569,5 @@ class WinPlatform(DesktopPlatform):
             return True
 
         WNDENUMPROC = ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
-        user32.EnumWindows(WNDENUMPROC(_enum_windows_cb), 0)
+        cb_func = WNDENUMPROC(_enum_windows_cb)
+        user32.EnumWindows(cb_func, 0)

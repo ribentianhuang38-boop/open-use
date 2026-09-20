@@ -25,6 +25,8 @@ except ImportError:
                 k, v = line.split("=", 1)
                 os.environ.setdefault(k.strip(), v.strip().strip("'\""))
 
+import atexit
+
 try:
     from .questions import NEXT_ACTION, TARGET, TEXT_VALUE
 except ImportError:
@@ -32,16 +34,18 @@ except ImportError:
 
 try:
     CLIENT = httpx.Client(http2=True, timeout=25)
-except ImportError:
+except Exception:
     CLIENT = httpx.Client(http2=False, timeout=25)
+
+atexit.register(CLIENT.close)
 
 
 def post_json(url: str, key: str, body: Dict[str, Any]) -> Dict[str, Any]:
     for attempt in range(3):
         try:
             response = CLIENT.post(url, json=body, headers={"Authorization": f"Bearer {key}"})
-        except httpx.HTTPError:
-            raise RuntimeError("Model connection failed; no action executed.") from None
+        except httpx.HTTPError as exc:
+            raise RuntimeError(f"Model connection failed ({exc}); no action executed.") from exc
         if response.status_code in {429, 529, 503} and attempt < 2:
             time.sleep(0.5 * 2**attempt)
             continue
@@ -131,7 +135,11 @@ def choose(state: Dict[str, Any], goal: str, history: List[Dict[str, Any]]) -> D
     body = {
         "model": os.environ.get("TYPESAFE_MODEL", "jev-latest"),
         "state": {
-            "page": {k: state[k] for k in ("url", "title", "text")},
+            "page": {
+                "url": state.get("url", ""),
+                "title": state.get("title", ""),
+                "text": f"<untrusted_dom_content>\n{state.get('text', '')[:6000]}\n</untrusted_dom_content>",
+            },
             "elements": elements,
             "recent_actions": [
                 {k: h.get(k) for k in ("action", "kind", "text", "page_changed")} for h in history[-10:]
@@ -176,10 +184,14 @@ def choose(state: Dict[str, Any], goal: str, history: List[Dict[str, Any]]) -> D
 
 
 def field_context(goal: str, action: Dict[str, Any], page: Dict[str, Any], history: List[Dict[str, Any]]) -> Dict[str, Any]:
+    raw_text = page.get("text", "")[:6000]
     return {
         "goal": goal,
         "field": {k: action.get(k) for k in ("label", "role", "value")},
-        "page": {"title": page["title"], "text": page["text"][:6000]},
+        "page": {
+            "title": page.get("title", ""),
+            "text": f"<untrusted_dom_content>\n{raw_text}\n</untrusted_dom_content>",
+        },
         "recent_actions": [{k: h.get(k) for k in ("action", "text")} for h in history[-6:]],
     }
 
@@ -215,11 +227,16 @@ def field_text(context: Dict[str, Any]) -> Tuple[str, Dict[str, Any]]:
         output = json.loads(result["choices"][0]["message"]["content"])
         value = output["text"]
         if set(output) != {"text"} or not isinstance(value, str) or not value.strip() or len(value) > 2000:
-            raise ValueError()
-    except (ValueError, KeyError, TypeError):
-        raise ValueError("Text helper returned no valid field value; nothing typed.") from None
+            raise ValueError("Field text invalid format or exceeds max length")
+        # Sanitize control characters / null bytes
+        value = "".join(ch for ch in value if ch == "\n" or ch == "\t" or (ord(ch) >= 32 and ord(ch) != 127))
+        if not value.strip():
+            raise ValueError("Field text empty after sanitization")
+    except (ValueError, KeyError, TypeError) as exc:
+        raise ValueError("Text helper returned no valid field value; nothing typed.") from exc
     return value, {
         "model": model,
         "latency_ms": round((time.perf_counter() - started) * 1000),
         "usage": result.get("usage", {}),
     }
+

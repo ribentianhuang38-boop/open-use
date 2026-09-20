@@ -59,6 +59,7 @@ class DesktopAgent:
         self.history: List[Dict[str, Any]] = []
         self.step_count = 0
         self._recent_targets: List[str] = []
+        self.consecutive_wait_count = 0
 
     def _detect_loop(self, target_label: str) -> bool:
         self._recent_targets.append(target_label)
@@ -220,10 +221,27 @@ class DesktopAgent:
                 target_point = None
                 target_label = raw_choice
 
-        # Loop break
+        # Loop break & wait impasse check
         if self._detect_loop(target_label):
             print(f"  ⚠️ Loop detected! Switching to wait.")
             action_type = "wait"
+
+        if action_type == "wait":
+            self.consecutive_wait_count += 1
+        else:
+            self.consecutive_wait_count = 0
+
+        if self.consecutive_wait_count >= 3:
+            print(f"  🛑 [Jev Impasse] Encountered 3 consecutive wait cycles without progress. Escalate to LLM!")
+            return DesktopStepResult(
+                step=self.step_count,
+                action_type="escalate_to_llm",
+                target_label="consecutive_wait_impasse",
+                target_point=None,
+                is_goal_satisfied=False,
+                judge_score=0.0,
+                latency_ms=int((time.perf_counter() - t_start) * 1000),
+            )
 
         print(f"  👉 Step {self.step_count}: Decision={raw_choice} -> Action={action_type} Target='{target_label}' Point={target_point}")
 

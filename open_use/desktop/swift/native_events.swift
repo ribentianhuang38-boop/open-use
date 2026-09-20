@@ -21,12 +21,19 @@ let args = CommandLine.arguments
 guard args.count >= 2 else { printUsage() }
 let cmd = args[1]
 
+if !AXIsProcessTrusted() {
+    fputs("[Security Warning] macOS Accessibility permission is not granted to this process. Events may be silently ignored by the OS.\n", stderr)
+}
+
 switch cmd {
 case "click":
     guard args.count >= 4, let x = Double(args[2]), let y = Double(args[3]) else { printUsage() }
     let pt = CGPoint(x: x, y: y)
     guard let down = CGEvent(mouseEventSource: nil, mouseType: .leftMouseDown, mouseCursorPosition: pt, mouseButton: .left),
-          let up = CGEvent(mouseEventSource: nil, mouseType: .leftMouseUp, mouseCursorPosition: pt, mouseButton: .left) else { exit(1) }
+          let up = CGEvent(mouseEventSource: nil, mouseType: .leftMouseUp, mouseCursorPosition: pt, mouseButton: .left) else {
+        fputs("Failed to create CGEvent. Check process permissions.\n", stderr)
+        exit(1)
+    }
     down.post(tap: .cghidEventTap)
     usleep(25000)
     up.post(tap: .cghidEventTap)
@@ -115,14 +122,14 @@ case "type_text":
     // Join all remaining args (in case text has spaces)
     let text = args[2...].joined(separator: " ")
     let src = CGEventSource(stateID: .hidSystemState)
-    for ch in text.utf16 {
-        var uchar = ch
+    for char in text {
+        var ustr = Array(String(char).utf16)
         if let keyDown = CGEvent(keyboardEventSource: src, virtualKey: 0, keyDown: true) {
-            keyDown.keyboardSetUnicodeString(stringLength: 1, unicodeString: &uchar)
+            keyDown.keyboardSetUnicodeString(stringLength: ustr.count, unicodeString: &ustr)
             keyDown.post(tap: .cghidEventTap)
         }
         if let keyUp = CGEvent(keyboardEventSource: src, virtualKey: 0, keyDown: false) {
-            keyUp.keyboardSetUnicodeString(stringLength: 1, unicodeString: &uchar)
+            keyUp.keyboardSetUnicodeString(stringLength: ustr.count, unicodeString: &ustr)
             keyUp.post(tap: .cghidEventTap)
         }
         usleep(8000) // 8ms between chars for reliability

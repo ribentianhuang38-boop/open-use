@@ -103,6 +103,29 @@ class TestDesktopAgent(unittest.TestCase):
             self.assertEqual(res.action_type, "type_text")
             self.assertIn("HelloWorld", platform.typed_texts)
 
+    def test_wait_impasse_escalation(self):
+        # Defect M7 check: 3 consecutive waits automatically escalate to LLM
+        platform = MockDesktopPlatform()
+        agent = DesktopAgent(goal='Wait for download to finish', platform=platform, click_delay=0.0)
+
+        with patch.object(agent, "_batched_decision_and_safety") as mock_decision:
+            mock_choice = MagicMock()
+            mock_choice.choice = "wait"
+            mock_decision.return_value = {"decision": mock_choice, "safety": None}
+
+            res1 = agent.step()
+            self.assertEqual(res1.action_type, "wait")
+            self.assertEqual(agent.consecutive_wait_count, 1)
+
+            res2 = agent.step()
+            self.assertEqual(res2.action_type, "wait")
+            self.assertEqual(agent.consecutive_wait_count, 2)
+
+            res3 = agent.step()
+            self.assertEqual(res3.action_type, "escalate_to_llm")
+            self.assertEqual(res3.target_label, "consecutive_wait_impasse")
+
 
 if __name__ == "__main__":
     unittest.main()
+

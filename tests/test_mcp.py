@@ -96,6 +96,42 @@ class TestMCPServer(unittest.TestCase):
             self.assertNotIn("data", resp["error"])
             self.assertEqual(resp["error"]["code"], -32603)
 
+    def test_desktop_click_button_uses_cache(self):
+        # Defect H7 check: desktop_click_button uses cached elements within TTL to avoid TOCTOU drift
+        import time
+        mock_platform = MagicMock()
+        self.server.platform = mock_platform
+        self.server._last_elements = {
+            "42": UIElement(id="42", label="Confirm", category="button", bbox=[10, 10, 50, 50], center=[30, 30])
+        }
+        self.server._last_shot_time = time.time()
+
+        res = self.server.handle_tool_call("desktop_click_button", {"button_id": "btn_42"})
+        self.assertEqual(res["status"], "success")
+        self.assertEqual(res["clicked"], "Confirm")
+        self.assertEqual(res["point"], [30, 30])
+        # Assert no screenshot was taken because cache was fresh
+        mock_platform.capture_screen.assert_not_called()
+        mock_platform.click.assert_called_with(30, 30)
+
+    def test_notification_silently_ignored(self):
+        # Defect M5 check: Requests without an 'id' member must NOT be replied to
+        import io
+        import sys
+        notification_line = json.dumps({"jsonrpc": "2.0", "method": "custom/notification", "params": {}}) + "\n"
+        stdin_backup = sys.stdin
+        stdout_backup = sys.stdout
+        try:
+            sys.stdin = io.StringIO(notification_line)
+            sys.stdout = io.StringIO()
+            self.server.run_stdio()
+            output = sys.stdout.getvalue()
+            self.assertEqual(output.strip(), "", "Notification must not produce response output")
+        finally:
+            sys.stdin = stdin_backup
+            sys.stdout = stdout_backup
+
 
 if __name__ == "__main__":
     unittest.main()
+

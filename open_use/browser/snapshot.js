@@ -1,6 +1,30 @@
 (() => {
   if (!document.body) return null;
-  const cache = window.__jevFast ||= {ids:new WeakMap(), nodes:new Map(), next:1};
+  const _KEY = Symbol.for('__openuse_jev_private__');
+  if (!window[_KEY]) {
+    const _store = {ids: new WeakMap(), nodes: new Map(), next: 1};
+    try {
+      Object.defineProperty(window, _KEY, {
+        value: _store,
+        writable: false,
+        configurable: false,
+        enumerable: false,
+      });
+    } catch (_) {
+      window[_KEY] = _store;
+    }
+  }
+  const cache = window[_KEY];
+  try {
+    Object.defineProperty(window, '__jevFast', {
+      value: cache,
+      writable: false,
+      configurable: false,
+      enumerable: false,
+    });
+  } catch (_) {
+    window.__jevFast = cache;
+  }
   const identity = e => {
     if (!cache.ids.has(e)) cache.ids.set(e,cache.next++);
     const id=cache.ids.get(e); cache.nodes.set(id,e); return id;

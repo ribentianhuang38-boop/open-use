@@ -26,7 +26,7 @@ logger = logging.getLogger("open_use.desktop.mac")
 
 # Pinned SHA256 hashes of bundled official arm64 binaries
 EXPECTED_HASHES = {
-    "native_events": "90750e7430ad9d14f6fcc561a12b751159e3cca0da1487a6b8edb2603390801c",
+    "native_events": "14c75c4b7d5b0b4a99528c53c982f5d4dff6168097d7c5cfac1c0b3659327998",
     "ocr_detector": "fccd1e3ffb5c10bace42e5c6f2b8f9d503f447b48d459d7e821ccb0010dd988c",
 }
 
@@ -103,10 +103,39 @@ class MacPlatform(DesktopPlatform):
                 logger.warning(f"Could not compile {bin_name} from Swift: {exc}. Will fallback to pure Python/AppleScript.")
 
     def capture_screen(self, output_path: Optional[str] = None) -> str:
-        """Capture screen using native screencapture into system temp dir."""
-        out_file = output_path or os.path.join(tempfile.gettempdir(), f"openuse_mac_{int(time.time()*1000)}.png")
+        """Capture screen using native screencapture into a restricted temp file (0o600)."""
+        if output_path:
+            out_file = output_path
+        else:
+            fd, out_file = tempfile.mkstemp(prefix="openuse_mac_", suffix=".png")
+            os.close(fd)
+            try:
+                os.chmod(out_file, 0o600)
+            except OSError:
+                pass
+
         Path(out_file).parent.mkdir(parents=True, exist_ok=True)
-        subprocess.run(["screencapture", "-x", out_file], check=True)
+        subprocess.run(["screencapture", "-x", out_file], timeout=5.0, check=True)
+
+        # M11 Screen Recording permission diagnostic check
+        try:
+            if os.path.getsize(out_file) < 500:
+                logger.warning(
+                    "[Permissions] Screencapture produced a suspiciously small file (<500 bytes). "
+                    "Ensure Screen Recording permission is granted in macOS System Settings > Privacy & Security."
+                )
+            else:
+                from PIL import Image
+                with Image.open(out_file) as img:
+                    extrema = img.convert("L").getextrema()
+                    if extrema == (0, 0):
+                        logger.warning(
+                            "[Permissions] Screenshot contains entirely black pixels! "
+                            "Screen Recording permission is missing in macOS System Settings > Privacy & Security > Screen Recording."
+                        )
+        except Exception:
+            pass
+
         return out_file
 
     def detect_ui_elements(self, image_path: str, scale: float = 2.0) -> List[UIElement]:
@@ -198,15 +227,15 @@ class MacPlatform(DesktopPlatform):
     def click(self, x: int, y: int) -> None:
         """Send native hardware mouse click."""
         if os.path.exists(self.native_bin):
-            subprocess.run([self.native_bin, "click", str(x), str(y)], check=False)
+            subprocess.run([self.native_bin, "click", str(x), str(y)], timeout=5.0, check=False)
         else:
             script = 'on run argv\nset {x, y} to {item 1 of argv as integer, item 2 of argv as integer}\ntell application "System Events" to click at {x, y}\nend run'
-            subprocess.run(["osascript", "-e", script, str(x), str(y)], check=False)
+            subprocess.run(["osascript", "-e", script, str(x), str(y)], timeout=5.0, check=False)
 
     def double_click(self, x: int, y: int) -> None:
         """Send native hardware double click."""
         if os.path.exists(self.native_bin):
-            subprocess.run([self.native_bin, "double_click", str(x), str(y)], check=False)
+            subprocess.run([self.native_bin, "double_click", str(x), str(y)], timeout=5.0, check=False)
         else:
             self.click(x, y)
             time.sleep(0.08)
@@ -215,16 +244,16 @@ class MacPlatform(DesktopPlatform):
     def right_click(self, x: int, y: int) -> None:
         """Send native hardware right click."""
         if os.path.exists(self.native_bin):
-            subprocess.run([self.native_bin, "right_click", str(x), str(y)], check=False)
+            subprocess.run([self.native_bin, "right_click", str(x), str(y)], timeout=5.0, check=False)
 
     def type_text(self, text: str) -> None:
         """Type Unicode text natively into focused window (Zero injection via argv/native binary)."""
         if os.path.exists(self.native_bin):
-            subprocess.run([self.native_bin, "type_text", text], check=False)
+            subprocess.run([self.native_bin, "type_text", text], timeout=5.0, check=False)
         else:
             # Safe parameterized AppleScript execution
             script = 'on run argv\ntell application "System Events" to keystroke (item 1 of argv)\nend run'
-            subprocess.run(["osascript", "-e", script, text], check=False)
+            subprocess.run(["osascript", "-e", script, text], timeout=5.0, check=False)
 
     def press_key(self, key_name: str) -> None:
         """Press special key via key_code."""
@@ -236,10 +265,11 @@ class MacPlatform(DesktopPlatform):
         code = key_codes.get(key_name.lower())
         if code is not None:
             if os.path.exists(self.native_bin):
-                subprocess.run([self.native_bin, "key_code", str(code)], check=False)
+                subprocess.run([self.native_bin, "key_code", str(code)], timeout=5.0, check=False)
             else:
                 subprocess.run(
                     ["osascript", "-e", 'on run argv\ntell application "System Events" to key code (item 1 of argv as integer)\nend run', str(code)],
+                    timeout=5.0,
                     check=False,
                 )
 
@@ -269,7 +299,7 @@ class MacPlatform(DesktopPlatform):
             mod_expr = ""
 
         script = f'on run argv\ntell application "System Events" to keystroke (item 1 of argv) {mod_expr}\nend run'
-        subprocess.run(["osascript", "-e", script, target_char], check=False)
+        subprocess.run(["osascript", "-e", script, target_char], timeout=5.0, check=False)
 
     def copy_file_to_clipboard(self, file_path: str) -> None:
         """Mount file to NSPasteboard (Zero injection via argv)."""
@@ -278,17 +308,17 @@ class MacPlatform(DesktopPlatform):
             raise FileNotFoundError(f"File not found: {abs_path}")
 
         if os.path.exists(self.native_bin):
-            subprocess.run([self.native_bin, "copy_file", abs_path], check=True)
+            subprocess.run([self.native_bin, "copy_file", abs_path], timeout=5.0, check=True)
         else:
             script = 'on run argv\nset the clipboard to (POSIX file (item 1 of argv))\nend run'
-            subprocess.run(["osascript", "-e", script, abs_path], check=True)
+            subprocess.run(["osascript", "-e", script, abs_path], timeout=5.0, check=True)
 
     def scroll(self, x: int, y: int, delta: int) -> None:
         """Send native scroll event."""
         if os.path.exists(self.native_bin):
-            subprocess.run([self.native_bin, "scroll", str(x), str(y), str(delta)], check=False)
+            subprocess.run([self.native_bin, "scroll", str(x), str(y), str(delta)], timeout=5.0, check=False)
 
     def activate_app(self, app_name: str) -> None:
         """Activate app via parameterized osascript."""
         script = 'on run argv\ntell application (item 1 of argv) to activate\nend run'
-        subprocess.run(["osascript", "-e", script, app_name], check=False)
+        subprocess.run(["osascript", "-e", script, app_name], timeout=5.0, check=False)

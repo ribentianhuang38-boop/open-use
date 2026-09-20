@@ -6,7 +6,7 @@ import base64
 import logging
 import time
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Union
 
 try:
     from open_use.core.jev_judge import GoalVerdict, JevJudge
@@ -28,7 +28,7 @@ class Agent:
     def __init__(
         self,
         url: str,
-        goals: str | List[str],
+        goals: Union[str, List[str]],
         *,
         record_dir: Optional[str | Path] = None,
         screenshots: bool = False,
@@ -226,8 +226,11 @@ class Agent:
         return self.snapshot()
 
     def run(self):
-        while self.state["status"] not in {"done", "blocked"}:
-            yield self.command("tick")
+        try:
+            while self.state["status"] not in {"done", "blocked"}:
+                yield self.command("tick")
+        finally:
+            self.close()
 
     def close(self):
         if self.browser:
