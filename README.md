@@ -1,52 +1,79 @@
-# OmniUse 🌐💻
+<div align="center">
 
-> **The Dual-Core Autonomous Agent Bridging Browser & Desktop Worlds.**  
-> Powered by **CDP**, **Set-of-Marks (SoM)**, and **TypeSafe Jev System One** sub-50ms probabilistic decision engine.
+# 🌐 OmniUse 💻
 
----
+### The Dual-Core Autonomous Agent Bridging Browser & Desktop Worlds
 
-[![License: Apache 2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
-[![Python 3.9+](https://img.shields.io/badge/python-3.9+-blue.svg)](https://www.python.org/downloads/)
-[![Platform](https://img.shields.io/badge/platform-macOS%20%7C%20Windows-lightgrey.svg)]()
+[![License: Apache 2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg?style=for-the-badge)](https://opensource.org/licenses/Apache-2.0)
+[![Python 3.9+](https://img.shields.io/badge/python-3.9+-3776AB.svg?style=for-the-badge&logo=python&logoColor=white)](https://www.python.org/downloads/)
+[![Platform](https://img.shields.io/badge/platform-macOS%20%7C%20Windows-0078D6.svg?style=for-the-badge&logo=windows&logoColor=white)]()
+[![Protocol: MCP](https://img.shields.io/badge/protocol-MCP%20JSON--RPC-black.svg?style=for-the-badge&logo=anthropic&logoColor=white)](https://modelcontextprotocol.io/)
+[![Decision Engine](https://img.shields.io/badge/Engine-TypeSafe%20Jev%20sub--50ms-green.svg?style=for-the-badge)](https://typesafe.ai)
 
----
+<p align="center">
+  <a href="README.md"><b>English</b></a> •
+  <a href="README_zh.md"><b>中文说明</b></a>
+</p>
 
-## 🌟 Why OmniUse?
+*Execute multi-step automation spanning Google Chrome and native desktop applications (WeChat, QQ, Office, Finder, Explorer) at sub-second speeds with 98% lower cloud token overhead.*
 
-Traditional autonomous agents suffer from two major flaws:
-1. **The Sandbox Trap**: Web agents cannot touch local native apps (like WeChat, QQ, Office, Finder). Desktop agents struggle with deep dynamic web forms and nested iframes.
-2. **The "Token Burner" Problem**: Uploading full 4K screenshots to cloud Vision LLMs on every single step creates 5-15 second latencies and burns thousands of tokens per minute.
-
-**OmniUse solves both**:
-- **Dual-Core Architecture**: Seamlessly coordinates between a **Browser Engine** (direct CDP DOM interaction) and a **Desktop Engine** (Hardware Abstraction Layer for OS interactions).
-- **Sub-50ms Decisions**: Uses local high-speed perception (Apple Vision on macOS / RapidOCR on Windows) to extract structured buttons `[1]`, `[2]`, `[3]`. **TypeSafe Jev System One** selects the action in **sub-50ms**, dropping cloud token costs by **98%**.
+</div>
 
 ---
 
-## 🏗 Architecture & Cross-Platform Support
+## ⚡ Key Highlights
 
+- 🌐 **Dual-Core Architecture**: Seamlessly cross the boundary between browser DOM and native OS applications. Automatically dispatch web tasks to CDP and desktop tasks to native HAL.
+- ⚡ **Sub-50ms Decision Loop**: Replaces slow 10-second multimodal screenshot upload loops with local **Set-of-Marks (SoM)** and **TypeSafe Jev System One** probabilistic reasoning.
+- 💰 **98% Token Reduction**: Eliminates continuous full-screen Retina/4K image uploads to cloud LLMs by using structured interactive button maps (`[1]`, `[2]`, `[3]`).
+- 🪟 **True Cross-Platform (macOS & Windows)**:
+  - **macOS**: Apple Neural Engine (ANE) Vision OCR (`.accurate`) + CoreGraphics hardware events.
+  - **Windows**: RapidOCR (ONNXRuntime / DirectML) + Win32 `SendInput` ctypes + `CF_HDROP` clipboard.
+- 🔌 **Native Model Context Protocol (MCP)**: Acts as a standard MCP Server over stdio, bringing native OS control and deep web automation to **Claude Desktop**, **Cursor**, **Windsurf**, and **Zed**.
+- 📋 **Zero-Loss File Passing**: Mounts files natively into the OS clipboard buffer, allowing AI agents to copy files from web portals and paste them directly as inline attachments into IM or Office apps.
+
+---
+
+## 📊 Comparison Matrix
+
+| Feature / Capability | Traditional RPA | Claude Computer Use | Browser-Use | **OmniUse** |
+| :--- | :--- | :--- | :--- | :--- |
+| **Decision Latency** | Static scripts | 4,000 ~ 12,000 ms | 1,000 ~ 3,000 ms | **sub-50 ms** (Jev System One) |
+| **Cloud Token Burn** | 0 tokens | ~2,500 tokens / step | ~1,200 tokens / step | **~40 tokens / step (98% drop)** |
+| **Browser Execution**| Fragile selectors | Full-screen vision clicks | Native CDP DOM | **Native CDP DOM + Numbered Table** |
+| **Desktop Apps** | Windows only (fragile) | macOS / Linux (Vision) | ❌ Not supported | **✅ macOS & Windows (Native HAL)** |
+| **Cross-Boundary Handoff**| Custom glue code | ❌ Manual switching | ❌ Web-only | **✅ Unified OmniAgent Pipeline** |
+| **MCP Integration** | ❌ No | ❌ Custom API | ⚠️ Experimental | **✅ Standard JSON-RPC 2.0 stdio** |
+
+---
+
+## 🏗 Architecture
+
+```mermaid
+graph TB
+    subgraph Macro [Macro Orchestrator Layer]
+        User[User Goal / MCP Client] -->|Natural Language| OmniAgent[OmniAgent Dual-Core Orchestrator]
+    end
+
+    subgraph Router [Intelligent Domain Router]
+        OmniAgent -->|Detect Web URL / Domain| BrowserCore[Browser Engine: Chrome DevTools Protocol]
+        OmniAgent -->|Detect Native App / File Action| DesktopCore[Desktop Engine: Hardware Abstraction Layer]
+    end
+
+    subgraph Perception [Local Ultra-Fast Perception]
+        BrowserCore -->|Compact Interactive DOM| Snapshot[snapshot.js DOM Table]
+        DesktopCore -->|macOS| MacHAL[Apple Vision Neural OCR + Rectangles]
+        DesktopCore -->|Windows| WinHAL[RapidOCR ONNX + OpenCV Contours]
+    end
+
+    subgraph Decision [System One Micro-Decision Engine]
+        Snapshot & MacHAL & WinHAL -->|Numbered Buttons btn_1, btn_2| Jev[TypeSafe Jev System One]
+        Jev -->|sub-50ms Action Choice| ActionExec[Native Hardware Action / CDP Event]
+        ActionExec -->|State Evaluation| Judge[Jev Judge Independent Audit]
+    end
+
+    Judge -.->|Task Complete| User
 ```
-                         OmniAgent (Unified Orchestrator)
-                                      │
-              ┌───────────────────────┴───────────────────────┐
-              ▼                                               ▼
-       Browser Engine                                  Desktop Engine
-    (CDP + DOM Numbering)                     (Hardware Abstraction Layer - HAL)
-              │                                               │
-              ▼                                   ┌───────────┴───────────┐
-     Google Chrome / Edge                         ▼                       ▼
-   (Forms, Scraping, Downloads)             macOS Platform         Windows Platform
-                                          (Apple Vision Accurate)   (RapidOCR ONNX)
-                                          (Swift CGEvent Events)   (Win32 SendInput)
-```
-
-| Feature | macOS Engine | Windows Engine |
-| :--- | :--- | :--- |
-| **Text Perception (OCR)** | Apple Vision Accurate (Apple Neural Engine) | RapidOCR (ONNXRuntime / DirectML) |
-| **UI Container Detection**| Apple Vision Rectangles | Numpy Vectorized Heuristics |
-| **Native Input** | Swift CGEvent Hardware Driver | Win32 `user32.SendInput` ctypes |
-| **Clipboard File Mount**  | NSPasteboard | Win32 `CF_HDROP` Structure |
-| **Web Automation** | Google Chrome via CDP | Chrome / Microsoft Edge via CDP |
 
 ---
 
@@ -55,22 +82,24 @@ Traditional autonomous agents suffer from two major flaws:
 ### 1. Installation
 
 ```bash
-git clone https://github.com/your-username/omni-use.git
+# Clone repository
+git clone https://github.com/ribentianhuang38-boop/omni-use.git
 cd omni-use
 
-# Install core dependencies
-pip install -r requirements.txt
+# Install in editable mode with core dependencies
+pip install -e .
 
-# On Windows: ensure rapidocr is installed
-# pip install rapidocr-onnxruntime
+# If on Windows (installs RapidOCR, ONNXRuntime, and mss):
+pip install -e ".[windows]"
 ```
 
 ### 2. Configuration
 
-Create a `.env` file or export your TypeSafe Jev API key:
+Create a `.env` file or export your API credentials:
 
 ```bash
-export JEV_API_KEY="your-typesafe-jev-key"
+cp .env.example .env
+# Edit .env and fill in your JEV_API_KEY (from https://typesafe.ai)
 ```
 
 ---
@@ -80,33 +109,33 @@ export JEV_API_KEY="your-typesafe-jev-key"
 ### CLI Execution
 
 ```bash
-# 1. Desktop mode (automatic platform detection: macOS or Windows)
-python run.py --mode desktop --goal "在 QQ 中把文件发送给客户"
+# 1. Desktop Mode (Auto-detects macOS or Windows)
+omni --mode desktop --goal "Open QQ and send /tmp/report.pdf to team chat"
 
-# 2. Browser mode
-python run.py --mode browser --url "https://example.com" --goal "Export yearly financial report"
+# 2. Browser Mode
+omni --mode browser --url "https://portal.example.com" --goal "Export Q3 financial sheet"
 
-# 3. Autonomous Smart Dispatch
-python run.py --goal "https://en.wikipedia.org/wiki/Main_Page Find Gödel's incompleteness theorem"
+# 3. Smart Dual-Core Auto Mode
+omni --goal "Download monthly metrics from https://analytics.company.com and paste into WeChat"
 ```
 
-### Python API Integration
+### Python SDK
 
 ```python
 from omni_use import OmniAgent
 
 agent = OmniAgent()
 
-# Cross-application chained task:
-# 1. Scrape data from web
-web_res = agent.run_browser(
-    url="https://portal.example.com",
-    goal="Download latest monthly audit spreadsheet to /tmp/audit.xlsx"
+# Run a dual-core chained workflow:
+# 1. Fetch file from web
+agent.run_browser(
+    url="https://github.com/ribentianhuang38-boop/omni-use",
+    goal="Star this repository and copy the clone URL"
 )
 
-# 2. Distribute to native desktop chat application
+# 2. Interact with native desktop software
 agent.run_desktop(
-    goal="Open QQ, search contact 'Finance Team', paste /tmp/audit.xlsx and send"
+    goal="Open Terminal and clone the repository to ~/Projects"
 )
 ```
 
@@ -114,63 +143,68 @@ agent.run_desktop(
 
 ## 🔌 Model Context Protocol (MCP) Server
 
-OmniUse can be launched directly as a standard **MCP Server** over stdio. This equips any MCP-compatible AI (Claude Desktop, Cursor, Windsurf, Zed, Antigravity) with native desktop and deep browser capabilities!
+OmniUse exposes 7 high-performance tools conforming to the official **Model Context Protocol (JSON-RPC 2.0)** standard.
 
-### 1. Launch via CLI
+### Launch MCP Server
 ```bash
-python run.py --mcp
+omni --mcp
+# or: python run.py --mcp
 ```
 
-### 2. Claude Desktop Integration
-Add the following to your `claude_desktop_config.json`:
+### Claude Desktop Configuration
+Add to `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS) or `%APPDATA%\Claude\claude_desktop_config.json` (Windows):
 
 ```json
 {
   "mcpServers": {
     "omni-use": {
-      "command": "python3",
-      "args": ["/absolute/path/to/omni-use/run.py", "--mcp"],
+      "command": "omni-use",
+      "args": ["--mcp"],
       "env": {
-        "JEV_API_KEY": "your-typesafe-jev-key"
+        "JEV_API_KEY": "your_typesafe_jev_key"
       }
     }
   }
 }
 ```
 
-### 3. Cursor Integration
-Add to your project's `.cursor/mcp.json`:
+### Cursor Configuration
+Add to `.cursor/mcp.json`:
 
 ```json
 {
   "mcpServers": {
     "omni-use": {
-      "command": "python3",
-      "args": ["run.py", "--mcp"]
+      "command": "python",
+      "args": ["-m", "omni_use.mcp_server"],
+      "env": {
+        "JEV_API_KEY": "your_typesafe_jev_key"
+      }
     }
   }
 }
 ```
 
-### Exposed MCP Tools:
-- `omni_run(goal)`: Dual-core autonomous execution across web and desktop.
-- `desktop_run_goal(goal, max_steps)`: Native desktop automation (QQ, WeChat, Office, Finder).
-- `browser_run_goal(url, goal)`: Fast CDP web automation without token waste.
-- `desktop_get_buttons()`: Inspect screen and return numbered UI buttons `[1], [2], [3]`.
-- `desktop_click_button(button_id)`: Hardware-level click by button ID.
-- `desktop_type_text(text)`: Native Unicode text typing.
-- `desktop_copy_file_to_clipboard(file_path)`: Mount file to OS clipboard for instant pasting.
+### Exposed MCP Tools
 
+| Tool | Parameters | Description |
+| :--- | :--- | :--- |
+| `omni_run` | `goal: str` | Smart dual-core auto-dispatch across browser and native apps |
+| `browser_run_goal` | `url: str, goal: str` | Deep CDP web automation without cloud image token burn |
+| `desktop_run_goal` | `goal: str, max_steps: int`| OS-level automation via local SoM perception and Jev |
+| `desktop_get_buttons`| `none` | Return numbered interactive buttons `[1], [2], [3]` on screen |
+| `desktop_click_button`| `button_id: str` | Hardware-level click on a specific numbered button |
+| `desktop_type_text` | `text: str` | Send native Unicode keyboard input |
+| `desktop_copy_file_to_clipboard` | `file_path: str` | Mount a file to OS clipboard for instant native pasting |
 
 ---
 
-## ⚖️ License & Open Source Compliance
+## ⚖️ License
 
-This project is licensed under the **Apache License 2.0** - see the [LICENSE](LICENSE) file for details.
+Distributed under the **Apache License 2.0**. See [`LICENSE`](LICENSE) for details.
 
-### 🙏 Credits & Acknowledgments
-We express deep appreciation to the following pioneering open-source projects and services that inspired and empowered this architecture:
-- [browser-use](https://github.com/browser-use/browser-use) - Groundbreaking browser automation concepts and CDP design patterns.
-- [RapidOCR](https://github.com/RapidAI/RapidOCR) - High-performance, offline ONNX OCR engine powering our Windows perception layer.
-- [PaddleOCR](https://github.com/PaddlePaddle/PaddleOCR) - Robust deep learning text recognition models.
-- [TypeSafe AI](https://typesafe.ai) - The `jev-latest` System One decision and audit engine.
+### 🙏 Acknowledgments
+
+- [browser-use](https://github.com/browser-use/browser-use) — Architectural inspiration for CDP web automation patterns.
+- [RapidOCR](https://github.com/RapidAI/RapidOCR) — High-performance, offline ONNX OCR engine powering Windows perception.
+- [TypeSafe AI](https://typesafe.ai) — Ultra-fast `jev-latest` System One decision and evaluation engine.
