@@ -12,18 +12,11 @@ from typing import Any, Dict, List, Tuple
 import httpx
 
 try:
-    from dotenv import load_dotenv
-    _env_path = Path(__file__).resolve().parent / ".env"
-    if _env_path.exists():
-        load_dotenv(_env_path)
-except ImportError:
-    _env_path = Path(__file__).resolve().parent / ".env"
-    if _env_path.exists():
-        for line in _env_path.read_text(encoding="utf-8").splitlines():
-            line = line.strip()
-            if line and not line.startswith("#") and "=" in line:
-                k, v = line.split("=", 1)
-                os.environ.setdefault(k.strip(), v.strip().strip("'\""))
+    from ..core.config import load_env, get_typesafe_base_url
+except Exception:
+    from open_use.core.config import load_env, get_typesafe_base_url
+
+load_env()
 
 import atexit
 
@@ -152,7 +145,8 @@ def choose(state: Dict[str, Any], goal: str, history: List[Dict[str, Any]]) -> D
     if not api_key:
         raise ValueError("TYPESAFE_API_KEY or JEV_API_KEY environment variable is required.")
 
-    result = post_json("https://api.typesafe.ai/v1/systemone", api_key, body)
+    endpoint = f"{get_typesafe_base_url()}/systemone"
+    result = post_json(endpoint, api_key, body)
     operation_answer = validate_choice(result["answers"].get("operation", {}), operations)
     operation = operation_answer["choice"]
     target = None

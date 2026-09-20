@@ -18,6 +18,11 @@ from typing import Any, Dict, List, Optional
 from .agent import OpenAgent, OmniAgent
 from .desktop.hal import get_current_platform
 
+try:
+    from .core.security import validate_safe_file_path, validate_safe_url
+except Exception:
+    from open_use.core.security import validate_safe_file_path, validate_safe_url
+
 logger = logging.getLogger("open_use.mcp_server")
 
 
@@ -160,87 +165,90 @@ class MCPServer:
         """Dispatch tool calls to corresponding engine with concurrency locking and state isolation."""
         with self._lock:
             isolated_agent = OpenAgent(click_delay=self.agent.click_delay)
+            try:
+                if name in ("open_run", "omni_run"):
+                    res = isolated_agent.run(goal=args["goal"])
+                    return {"status": "success", "result": str(res)}
 
-            if name in ("open_run", "omni_run"):
-                res = isolated_agent.run(goal=args["goal"])
-                return {"status": "success", "result": str(res)}
-
-            elif name == "desktop_run_goal":
-                max_steps = args.get("max_steps", 15)
-                res = isolated_agent.run_desktop(goal=args["goal"], max_steps=max_steps)
-                last_step = res[-1] if res else None
-                needs_llm = (last_step.action_type == "escalate_to_llm") if last_step else False
-                return {
-                    "status": "escalated_to_llm" if needs_llm else "success",
-                    "completed": any(r.is_goal_satisfied for r in res),
-                    "steps_executed": len(res),
-                    "needs_llm_intervention": needs_llm,
-                    "escalation_reason": last_step.target_label if needs_llm else "",
-                    "next_hint": (
-                        "Execute one strategic step (e.g. desktop_click_button or desktop_type_text) to break the impasse. "
-                        "Jev will automatically sniff if it can reclaim control on subsequent cycles."
-                        if needs_llm else "Task proceeded normally."
-                    ),
-                }
-
-            elif name == "browser_run_goal":
-                url = args["url"]
-                goal = args["goal"]
-                max_steps = args.get("max_steps", 25)
-                res = isolated_agent.run_browser(url=url, goal=goal, max_steps=max_steps)
-                return {"status": "success", "browser_result": res}
-
-            elif name == "desktop_get_buttons":
-                shot = self.platform.capture_screen()
-                try:
-                    scale = 1.0 if sys.platform == "win32" else 2.0
-                    elements = self.platform.detect_ui_elements(shot, scale=scale)
-                    self._last_elements = {el.id: el for el in elements}
-                    self._last_shot_time = time.time()
+                elif name == "desktop_run_goal":
+                    max_steps = args.get("max_steps", 15)
+                    res = isolated_agent.run_desktop(goal=args["goal"], max_steps=max_steps)
+                    last_step = res[-1] if res else None
+                    needs_llm = (last_step.action_type == "escalate_to_llm") if last_step else False
                     return {
-                        "total": len(elements),
-                        "buttons": [
-                            {"id": el.id, "label": el.label, "category": el.category, "center": el.center}
-                            for el in elements[:60]
-                        ],
+                        "status": "escalated_to_llm" if needs_llm else "success",
+                        "completed": any(r.is_goal_satisfied for r in res),
+                        "steps_executed": len(res),
+                        "needs_llm_intervention": needs_llm,
+                        "escalation_reason": last_step.target_label if needs_llm else "",
+                        "next_hint": (
+                            "Execute one strategic step (e.g. desktop_click_button or desktop_type_text) to break the impasse. "
+                            "Jev will automatically sniff if it can reclaim control on subsequent cycles."
+                            if needs_llm else "Task proceeded normally."
+                        ),
                     }
-                finally:
-                    self.platform.cleanup_screenshot(shot)
 
-            elif name == "desktop_click_button":
-                btn_id = str(args["button_id"]).replace("btn_", "").strip()
-                # 1. Check recent cache (within 15 seconds) to prevent TOCTOU re-detection drift
-                target = None
-                if (time.time() - self._last_shot_time < 15.0) and (btn_id in self._last_elements):
-                    target = self._last_elements[btn_id]
+                elif name == "browser_run_goal":
+                    safe_url = validate_safe_url(args["url"])
+                    goal = args["goal"]
+                    max_steps = args.get("max_steps", 25)
+                    res = isolated_agent.run_browser(url=safe_url, goal=goal, max_steps=max_steps)
+                    return {"status": "success", "browser_result": res}
 
-                # 2. If not found in cache, fallback to fresh capture
-                if not target:
+                elif name == "desktop_get_buttons":
                     shot = self.platform.capture_screen()
                     try:
                         scale = 1.0 if sys.platform == "win32" else 2.0
                         elements = self.platform.detect_ui_elements(shot, scale=scale)
                         self._last_elements = {el.id: el for el in elements}
                         self._last_shot_time = time.time()
-                        target = next((e for e in elements if e.id == btn_id), None)
+                        return {
+                            "total": len(elements),
+                            "buttons": [
+                                {"id": el.id, "label": el.label, "category": el.category, "center": el.center}
+                                for el in elements[:60]
+                            ],
+                        }
                     finally:
                         self.platform.cleanup_screenshot(shot)
 
-                if not target:
-                    return {"status": "error", "message": f"Button with ID {btn_id} not found"}
-                self.platform.click(target.center[0], target.center[1])
-                return {"status": "success", "clicked": target.label, "point": target.center}
+                elif name == "desktop_click_button":
+                    btn_id = str(args["button_id"]).replace("btn_", "").strip()
+                    # 1. Check recent cache (within 15 seconds) to prevent TOCTOU re-detection drift
+                    target = None
+                    if (time.time() - self._last_shot_time < 15.0) and (btn_id in self._last_elements):
+                        target = self._last_elements[btn_id]
 
-            elif name == "desktop_type_text":
-                self.platform.type_text(args["text"])
-                return {"status": "success", "typed": args["text"]}
+                    # 2. If not found in cache, fallback to fresh capture
+                    if not target:
+                        shot = self.platform.capture_screen()
+                        try:
+                            scale = 1.0 if sys.platform == "win32" else 2.0
+                            elements = self.platform.detect_ui_elements(shot, scale=scale)
+                            self._last_elements = {el.id: el for el in elements}
+                            self._last_shot_time = time.time()
+                            target = next((e for e in elements if e.id == btn_id), None)
+                        finally:
+                            self.platform.cleanup_screenshot(shot)
 
-            elif name == "desktop_copy_file_to_clipboard":
-                self.platform.copy_file_to_clipboard(args["file_path"])
-                return {"status": "success", "mounted_file": args["file_path"]}
+                    if not target:
+                        return {"status": "error", "message": f"Button with ID {btn_id} not found"}
+                    self.platform.click(target.center[0], target.center[1])
+                    return {"status": "success", "clicked": target.label, "point": target.center}
 
-            else:
-                raise ValueError(f"Unknown tool: {name}")
+                elif name == "desktop_type_text":
+                    self.platform.type_text(args["text"])
+                    return {"status": "success", "typed": args["text"]}
+
+                elif name == "desktop_copy_file_to_clipboard":
+                    safe_path = validate_safe_file_path(args["file_path"])
+                    self.platform.copy_file_to_clipboard(str(safe_path))
+                    return {"status": "success", "mounted_file": str(safe_path)}
+
+                else:
+                    raise ValueError(f"Unknown tool: {name}")
+            finally:
+                isolated_agent.close()
 
     def run_stdio(self) -> None:
         """Run standard MCP JSON-RPC stdio event loop."""
@@ -324,12 +332,17 @@ class MCPServer:
                         },
                     }
                 except Exception as err:
+                    err_msg = str(err)
+                    if isinstance(err, PermissionError):
+                        err_msg = f"Security Sandbox Violation: {err}"
+                    elif isinstance(err, FileNotFoundError):
+                        err_msg = "File access error: Target does not exist or cannot be accessed safely."
                     resp = {
                         "jsonrpc": "2.0",
                         "id": req_id,
                         "error": {
                             "code": -32603,
-                            "message": f"Tool execution error: {type(err).__name__}: {str(err)}",
+                            "message": f"Tool execution error: {type(err).__name__}: {err_msg}",
                         },
                     }
             elif method == "ping":

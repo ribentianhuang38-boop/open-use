@@ -61,3 +61,17 @@ htmlcov/
 *.swp
 *.swo
 .cursor/
+
+# Binary extensions and dynamic libraries (L-03)
+*.dll
+*.dylib
+*.exe
+*.pyd
+!open_use/bin/*
+
+# Credentials and secrets (L-03)
+*.pem
+*.key
+*.crt
+*.p12
+*.pfx

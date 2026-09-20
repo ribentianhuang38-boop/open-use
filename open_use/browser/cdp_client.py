@@ -12,15 +12,22 @@ import os
 import shutil
 import subprocess
 import sys
+import threading
 import time
 import urllib.request
 from typing import Any, Dict, Optional
 
+try:
+    from ..core.config import get_cdp_port
+except Exception:
+    from open_use.core.config import get_cdp_port
+
 logger = logging.getLogger("open_use.browser.cdp")
 
-_DEFAULT_CDP_PORT = int(os.environ.get("OPENUSE_CDP_PORT", "9222"))
+_DEFAULT_CDP_PORT = get_cdp_port()
 _CHROME_PROCESS = None
 _WS_CONNECTION = None
+_CDP_LOCK = threading.Lock()
 
 
 def _find_chrome_executable() -> Optional[str]:
@@ -77,6 +84,7 @@ def ensure_daemon(port: int = _DEFAULT_CDP_PORT, headless: bool = True) -> None:
     cmd = [
         chrome_bin,
         f"--remote-debugging-port={port}",
+        "--user-data-dir=/tmp/openuse_chrome_profile",
         "--no-first-run",
         "--no-default-browser-check",
         "--disable-sync",
@@ -113,7 +121,7 @@ _req_id = 1
 
 
 def cdp(method: str, session_id: Optional[str] = None, **params) -> Dict[str, Any]:
-    """Execute raw Chrome DevTools Protocol command over WebSocket."""
+    """Execute raw Chrome DevTools Protocol command over WebSocket with thread lock."""
     global _WS_CONNECTION, _req_id
 
     try:
@@ -123,31 +131,44 @@ def cdp(method: str, session_id: Optional[str] = None, **params) -> Dict[str, An
 
     ensure_daemon()
 
-    if _WS_CONNECTION is None:
-        ws_url = _get_browser_ws_url()
-        _WS_CONNECTION = ws_sync.connect(ws_url, max_size=100 * 1024 * 1024)
+    with _CDP_LOCK:
+        if _WS_CONNECTION is None:
+            ws_url = _get_browser_ws_url()
+            _WS_CONNECTION = ws_sync.connect(ws_url, max_size=100 * 1024 * 1024)
 
-    _req_id += 1
-    current_id = _req_id
+        _req_id += 1
+        current_id = _req_id
 
-    msg: Dict[str, Any] = {
-        "id": current_id,
-        "method": method,
-        "params": params,
-    }
-    if session_id:
-        msg["sessionId"] = session_id
+        msg: Dict[str, Any] = {
+            "id": current_id,
+            "method": method,
+            "params": params,
+        }
+        if session_id:
+            msg["sessionId"] = session_id
 
-    _WS_CONNECTION.send(json.dumps(msg))
+        _WS_CONNECTION.send(json.dumps(msg))
 
-    deadline = time.monotonic() + 20.0
-    while time.monotonic() < deadline:
-        raw = _WS_CONNECTION.recv(timeout=10.0)
-        data = json.loads(raw)
-        if data.get("id") == current_id:
-            if "error" in data:
-                err = data["error"]
-                raise RuntimeError(f"CDP Error ({err.get('code')}): {err.get('message')}")
-            return data.get("result", {})
+        deadline = time.monotonic() + 20.0
+        while time.monotonic() < deadline:
+            raw = _WS_CONNECTION.recv(timeout=10.0)
+            data = json.loads(raw)
+            if data.get("id") == current_id:
+                if "error" in data:
+                    err = data["error"]
+                    raise RuntimeError(f"CDP Error ({err.get('code')}): {err.get('message')}")
+                return data.get("result", {})
 
-    raise TimeoutError(f"CDP response timed out for method: {method}")
+        raise TimeoutError(f"CDP response timed out for method: {method}")
+
+
+def close_cdp() -> None:
+    """Close the active CDP WebSocket connection cleanly."""
+    global _WS_CONNECTION
+    with _CDP_LOCK:
+        if _WS_CONNECTION is not None:
+            try:
+                _WS_CONNECTION.close()
+            except Exception:
+                pass
+            _WS_CONNECTION = None

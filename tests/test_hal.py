@@ -68,16 +68,34 @@ class TestHAL(unittest.TestCase):
         # Mocked execution methods should not throw unhandled exceptions
         with patch("subprocess.run") as mock_run:
             lp.click(100, 200)
-            mock_run.assert_called_with(["xdotool", "mousemove", "100", "200", "click", "1"], check=False)
+            mock_run.assert_called_with(["xdotool", "mousemove", "100", "200", "click", "1"], timeout=5.0, check=False)
 
             lp.type_text("hello")
-            mock_run.assert_called_with(["xdotool", "type", "--", "hello"], check=False)
+            mock_run.assert_called_with(["xdotool", "type", "--", "hello"], timeout=5.0, check=False)
 
-            lp.press_key("Return")
-            mock_run.assert_called_with(["xdotool", "key", "Return"], check=False)
+            lp.press_key("return")
+            mock_run.assert_called_with(["xdotool", "key", "return"], timeout=5.0, check=False)
 
             lp.hotkey(["ctrl", "c"])
-            mock_run.assert_called_with(["xdotool", "key", "ctrl+c"], check=False)
+            mock_run.assert_called_with(["xdotool", "key", "ctrl+c"], timeout=5.0, check=False)
+
+    def test_win_platform_mocked(self):
+        """Test Windows platform scale attribute and SendInput logic via mocks (I-01, M-04)."""
+        import ctypes
+        from open_use.desktop.platform_win import WinPlatform
+        wp = WinPlatform()
+        self.assertEqual(wp.scale, 1.0)
+
+        mock_user32 = MagicMock()
+        with patch("sys.platform", "win32"):
+            with patch.object(ctypes, "windll", create=True) as mock_windll:
+                mock_windll.user32 = mock_user32
+                with patch.object(wp, "_get_screen_dimensions", return_value=(1920, 1080)):
+                    wp.click(100, 200)
+                    self.assertTrue(mock_user32.SendInput.called)
+
+                    wp.scroll(100, 200, 3)
+                    self.assertTrue(mock_user32.SendInput.called)
 
 
 if __name__ == "__main__":

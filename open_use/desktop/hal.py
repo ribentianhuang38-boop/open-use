@@ -14,6 +14,11 @@ import time
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Tuple
 
+try:
+    from ..core.security import validate_app_name, validate_key_name, validate_safe_file_path
+except Exception:
+    from open_use.core.security import validate_app_name, validate_key_name, validate_safe_file_path
+
 
 @dataclass
 class UIElement:
@@ -131,32 +136,36 @@ class LinuxPlatform(DesktopPlatform):
             return []
 
     def click(self, x: int, y: int) -> None:
-        subprocess.run(["xdotool", "mousemove", str(x), str(y), "click", "1"], check=False)
+        subprocess.run(["xdotool", "mousemove", str(x), str(y), "click", "1"], timeout=5.0, check=False)
 
     def double_click(self, x: int, y: int) -> None:
-        subprocess.run(["xdotool", "mousemove", str(x), str(y), "click", "--repeat", "2", "1"], check=False)
+        subprocess.run(["xdotool", "mousemove", str(x), str(y), "click", "--repeat", "2", "1"], timeout=5.0, check=False)
 
     def right_click(self, x: int, y: int) -> None:
-        subprocess.run(["xdotool", "mousemove", str(x), str(y), "click", "3"], check=False)
+        subprocess.run(["xdotool", "mousemove", str(x), str(y), "click", "3"], timeout=5.0, check=False)
 
     def type_text(self, text: str) -> None:
-        subprocess.run(["xdotool", "type", "--", text], check=False)
+        subprocess.run(["xdotool", "type", "--", text], timeout=5.0, check=False)
 
     def press_key(self, key_name: str) -> None:
-        subprocess.run(["xdotool", "key", key_name], check=False)
+        safe_key = validate_key_name(key_name)
+        subprocess.run(["xdotool", "key", safe_key], timeout=5.0, check=False)
 
     def hotkey(self, keys: List[str]) -> None:
-        subprocess.run(["xdotool", "key", "+".join(keys)], check=False)
+        safe_keys = [validate_key_name(k) for k in keys]
+        subprocess.run(["xdotool", "key", "+".join(safe_keys)], timeout=5.0, check=False)
 
     def copy_file_to_clipboard(self, file_path: str) -> None:
-        subprocess.run(["xclip", "-selection", "clipboard", "-t", "image/png", "-i", file_path], check=False)
+        safe_path = validate_safe_file_path(file_path)
+        subprocess.run(["xclip", "-selection", "clipboard", "-t", "image/png", "-i", str(safe_path)], timeout=5.0, check=False)
 
     def scroll(self, x: int, y: int, delta: int) -> None:
         btn = "4" if delta > 0 else "5"
-        subprocess.run(["xdotool", "click", btn], check=False)
+        subprocess.run(["xdotool", "click", btn], timeout=5.0, check=False)
 
     def activate_app(self, app_name: str) -> None:
-        subprocess.run(["xdotool", "search", "--name", app_name, "windowactivate"], check=False)
+        safe_app = validate_app_name(app_name)
+        subprocess.run(["xdotool", "search", "--name", safe_app, "windowactivate"], timeout=5.0, check=False)
 
 
 def get_current_platform() -> DesktopPlatform:

@@ -1,4 +1,5 @@
 import json
+import os
 import unittest
 from unittest.mock import MagicMock, patch
 
@@ -130,6 +131,35 @@ class TestMCPServer(unittest.TestCase):
         finally:
             sys.stdin = stdin_backup
             sys.stdout = stdout_backup
+
+
+    def test_desktop_copy_file_sensitive_path_blocked(self):
+        # C-01: Sensitive files must be blocked by sandbox
+        with self.assertRaises(PermissionError):
+            self.server.handle_tool_call("desktop_copy_file_to_clipboard", {"file_path": "~/.ssh/id_rsa"})
+
+    def test_desktop_copy_file_valid_path(self):
+        import tempfile
+        with tempfile.NamedTemporaryFile(suffix=".txt", delete=False) as f:
+            f.write(b"safe")
+            tmp_path = f.name
+        try:
+            mock_platform = MagicMock()
+            self.server.platform = mock_platform
+            res = self.server.handle_tool_call("desktop_copy_file_to_clipboard", {"file_path": tmp_path})
+            self.assertEqual(res["status"], "success")
+            mock_platform.copy_file_to_clipboard.assert_called_once()
+        finally:
+            if os.path.exists(tmp_path):
+                os.unlink(tmp_path)
+
+    def test_browser_run_goal_ssrf_blocked(self):
+        # H-01: Cloud metadata address must be blocked
+        with self.assertRaises(PermissionError):
+            self.server.handle_tool_call("browser_run_goal", {
+                "url": "http://169.254.169.254/latest/meta-data/",
+                "goal": "steal credentials",
+            })
 
 
 if __name__ == "__main__":

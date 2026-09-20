@@ -41,7 +41,12 @@ def main():
         "--max-steps",
         type=int,
         default=20,
-        help="Maximum step limit (default: 20)",
+        help="Maximum step limit between 1 and 100 (default: 20)",
+    )
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Simulate execution without modifying system state or executing native actions",
     )
 
     args = parser.parse_args()
@@ -56,13 +61,32 @@ def main():
         parser.print_help()
         sys.exit(1)
 
+    if not (1 <= args.max_steps <= 100):
+        sys.stderr.write(f"Error: --max-steps must be between 1 and 100 (received {args.max_steps})\n")
+        sys.exit(1)
+
+    if args.url:
+        from open_use.core.security import validate_safe_url
+        try:
+            validate_safe_url(args.url)
+        except Exception as e:
+            sys.stderr.write(f"Error: Invalid URL '{args.url}': {e}\n")
+            sys.exit(1)
+
+    kwargs = {
+        "goal": args.goal,
+        "mode": args.mode,
+        "url": args.url if args.url else None,
+        "max_steps": args.max_steps,
+    }
+    if args.dry_run:
+        kwargs["dry_run"] = True
+
     agent = OpenAgent()
-    agent.run(
-        goal=args.goal,
-        mode=args.mode,
-        url=args.url if args.url else None,
-        max_steps=args.max_steps,
-    )
+    try:
+        agent.run(**kwargs)
+    finally:
+        agent.close()
 
 
 if __name__ == "__main__":

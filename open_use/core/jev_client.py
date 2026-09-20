@@ -16,34 +16,10 @@ import httpx
 
 logger = logging.getLogger("open_use.core.jev_client")
 
-def _load_env_file():
-    """Discover and load .env from current directory or any parent directories."""
-    candidates = [
-        Path.cwd() / ".env",
-        Path(__file__).resolve().parent.parent.parent / ".env",
-        Path(__file__).resolve().parent.parent / ".env",
-        Path(__file__).resolve().parent / ".env",
-    ]
-    for env_path in candidates:
-        if env_path.is_file():
-            try:
-                from dotenv import load_dotenv
-                load_dotenv(env_path)
-            except ImportError:
-                for line in env_path.read_text(encoding="utf-8").splitlines():
-                    line = line.strip()
-                    if line and not line.startswith("#") and "=" in line:
-                        k, v = line.split("=", 1)
-                        os.environ.setdefault(k.strip(), v.strip().strip("'\""))
-            break
+from .config import load_env, get_typesafe_base_url
 
-    # Alias sync: JEV_API_KEY <-> TYPESAFE_API_KEY
-    key = os.environ.get("TYPESAFE_API_KEY") or os.environ.get("JEV_API_KEY")
-    if key:
-        os.environ.setdefault("TYPESAFE_API_KEY", key)
-        os.environ.setdefault("JEV_API_KEY", key)
-
-_load_env_file()
+load_env()
+_load_env_file = load_env
 
 
 @dataclass
@@ -59,43 +35,41 @@ class ScoreResult:
     score: float
     confidence: float
     probabilities: Dict[str, float]
-    legend: Dict[str, str]
-    raw: Dict[str, Any] = field(default_factory=dict)
+    legend: Dict[str, str] = field(default_factory=dict)
 
 
 @dataclass
 class JevResponse:
+    """Complete typed response from a TypeSafe System One query."""
     model: str
     answers: Dict[str, Any]
     usage: Dict[str, int]
     latency_ms: int
 
     def get_choice(self, question_id: str) -> Optional[ChoiceResult]:
-        ans = self.answers.get(question_id)
-        if not ans or ans.get("type") != "choice":
+        raw = self.answers.get(question_id)
+        if not raw or raw.get("type") != "choice":
             return None
         return ChoiceResult(
-            choice=ans.get("choice", ""),
-            confidence=ans.get("confidence", 0.0),
-            probabilities=ans.get("probabilities", {}),
-            raw=ans,
+            choice=raw["choice"],
+            confidence=raw.get("confidence", 0.0),
+            probabilities=raw.get("probabilities", {}),
         )
 
     def get_score(self, question_id: str) -> Optional[ScoreResult]:
-        ans = self.answers.get(question_id)
-        if not ans or ans.get("type") != "score":
+        raw = self.answers.get(question_id)
+        if not raw or raw.get("type") != "score":
             return None
         return ScoreResult(
-            score=float(ans.get("score", 0.0)),
-            confidence=float(ans.get("confidence", 0.0)),
-            probabilities={str(k): float(v) for k, v in ans.get("probabilities", {}).items()},
-            legend={str(k): str(v) for k, v in ans.get("legend", {}).items()},
-            raw=ans,
+            score=raw["score"],
+            confidence=raw.get("confidence", 0.0),
+            probabilities=raw.get("probabilities", {}),
+            legend=raw.get("legend", {}),
         )
 
 
 class JevClient:
-    """Client for TypeSafe AI Jev (System One Model)."""
+    """Production TypeSafe Jev System One Client."""
 
     DEFAULT_BASE_URL = "https://api.typesafe.ai/v1"
 
@@ -143,7 +117,21 @@ class JevClient:
                     elif q_id == "step_status":
                         chosen = "progress"
                     elif q_id == "safety":
-                        chosen = "safe"
+                        # C-02: Rigorous safety classification in local heuristic fallback
+                        act_text = str(state.get("action", "")).lower()
+                        goal_text = str(state.get("goal", "")).lower()
+                        combined = f"{act_text} {goal_text}"
+                        high_risk_terms = [
+                            "rm -rf", "delete", "format", "drop table", "drop database",
+                            "truncate", "kill -9", "shutdown", "reboot", "unlink",
+                            "sudo", "passwd", "shadow", "chmod 777", "curl | bash",
+                            "remove", "wipe", "destroy"
+                        ]
+                        is_destructive = any(term in combined for term in high_risk_terms)
+                        if is_destructive:
+                            chosen = "high_risk" if "high_risk" in crit else ("unsafe" if "unsafe" in crit else list(crit.keys())[-1])
+                        else:
+                            chosen = "medium_risk" if "medium_risk" in crit else ("safe" if "safe" in crit else list(crit.keys())[0])
                     else:
                         chosen = list(crit.keys())[0] if crit else ""
 

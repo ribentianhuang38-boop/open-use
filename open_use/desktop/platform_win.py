@@ -22,6 +22,11 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from .hal import DesktopPlatform, UIElement
 
+try:
+    from ..core.security import validate_app_name, validate_safe_file_path
+except Exception:
+    from open_use.core.security import validate_app_name, validate_safe_file_path
+
 # Try loading RapidOCR
 _HAS_RAPID_OCR = False
 try:
@@ -61,10 +66,10 @@ except ImportError:
 
 
 # Win32 ctypes structures for SendInput
-if sys.platform == "win32":
-    import ctypes.wintypes as wintypes
+import ctypes.wintypes as wintypes
 
-    # Enable Per-Monitor DPI Awareness immediately upon import
+# Enable Per-Monitor DPI Awareness on Windows hosts
+if hasattr(ctypes, "windll"):
     try:
         ctypes.windll.shcore.SetProcessDpiAwareness(2)  # Per-Monitor DPI Aware v2
     except Exception:
@@ -73,63 +78,64 @@ if sys.platform == "win32":
         except Exception:
             pass
 
-    PUL = ctypes.c_size_t
+PUL = ctypes.c_size_t
 
-    class KeyBdInput(ctypes.Structure):
-        _fields_ = [
-            ("wVk", wintypes.WORD),
-            ("wScan", wintypes.WORD),
-            ("dwFlags", wintypes.DWORD),
-            ("time", wintypes.DWORD),
-            ("dwExtraInfo", PUL),
-        ]
+class KeyBdInput(ctypes.Structure):
+    _fields_ = [
+        ("wVk", wintypes.WORD),
+        ("wScan", wintypes.WORD),
+        ("dwFlags", wintypes.DWORD),
+        ("time", wintypes.DWORD),
+        ("dwExtraInfo", PUL),
+    ]
 
-    class HardwareInput(ctypes.Structure):
-        _fields_ = [
-            ("uMsg", wintypes.DWORD),
-            ("wParamL", wintypes.WORD),
-            ("wParamH", wintypes.WORD),
-        ]
+class HardwareInput(ctypes.Structure):
+    _fields_ = [
+        ("uMsg", wintypes.DWORD),
+        ("wParamL", wintypes.WORD),
+        ("wParamH", wintypes.WORD),
+    ]
 
-    class MouseInput(ctypes.Structure):
-        _fields_ = [
-            ("dx", wintypes.LONG),
-            ("dy", wintypes.LONG),
-            ("mouseData", wintypes.DWORD),
-            ("dwFlags", wintypes.DWORD),
-            ("time", wintypes.DWORD),
-            ("dwExtraInfo", PUL),
-        ]
+class MouseInput(ctypes.Structure):
+    _fields_ = [
+        ("dx", wintypes.LONG),
+        ("dy", wintypes.LONG),
+        ("mouseData", wintypes.DWORD),
+        ("dwFlags", wintypes.DWORD),
+        ("time", wintypes.DWORD),
+        ("dwExtraInfo", PUL),
+    ]
 
-    class Input_I(ctypes.Union):
-        _fields_ = [("ki", KeyBdInput), ("mi", MouseInput), ("hi", HardwareInput)]
+class Input_I(ctypes.Union):
+    _fields_ = [("ki", KeyBdInput), ("mi", MouseInput), ("hi", HardwareInput)]
 
-    class Input(ctypes.Structure):
-        _fields_ = [("type", ctypes.c_ulong), ("ii", Input_I)]
+class Input(ctypes.Structure):
+    _fields_ = [("type", ctypes.c_ulong), ("ii", Input_I)]
 
-    # Win32 Constants
-    INPUT_MOUSE = 0
-    INPUT_KEYBOARD = 1
+# Win32 Constants
+INPUT_MOUSE = 0
+INPUT_KEYBOARD = 1
 
-    MOUSEEVENTF_MOVE = 0x0001
-    MOUSEEVENTF_LEFTDOWN = 0x0002
-    MOUSEEVENTF_LEFTUP = 0x0004
-    MOUSEEVENTF_RIGHTDOWN = 0x0008
-    MOUSEEVENTF_RIGHTUP = 0x0010
-    MOUSEEVENTF_WHEEL = 0x0800
-    MOUSEEVENTF_ABSOLUTE = 0x8000
+MOUSEEVENTF_MOVE = 0x0001
+MOUSEEVENTF_LEFTDOWN = 0x0002
+MOUSEEVENTF_LEFTUP = 0x0004
+MOUSEEVENTF_RIGHTDOWN = 0x0008
+MOUSEEVENTF_RIGHTUP = 0x0010
+MOUSEEVENTF_WHEEL = 0x0800
+MOUSEEVENTF_ABSOLUTE = 0x8000
 
-    KEYEVENTF_KEYUP = 0x0002
-    KEYEVENTF_UNICODE = 0x0004
+KEYEVENTF_KEYUP = 0x0002
+KEYEVENTF_UNICODE = 0x0004
 
-    CF_HDROP = 15
-    GHND = 0x0042
+CF_HDROP = 15
+GHND = 0x0042
 
 
 class WinPlatform(DesktopPlatform):
     """Production-grade Windows Desktop Automation Platform."""
 
     def __init__(self):
+        self.scale: float = 1.0
         self._ocr_engine = None
         if _HAS_RAPID_OCR:
             self._ocr_engine = RapidOCR()
@@ -496,13 +502,12 @@ class WinPlatform(DesktopPlatform):
         user32.SendInput(2, events, ctypes.sizeof(Input))
 
     def copy_file_to_clipboard(self, file_path: str) -> None:
-        """Mount file to Windows Clipboard using CF_HDROP structure with leak-proof cleanup."""
+        """Mount file to Windows Clipboard using CF_HDROP structure with security sandbox validation."""
         if sys.platform != "win32":
             return
 
-        abs_path = os.path.abspath(file_path)
-        if not os.path.exists(abs_path):
-            raise FileNotFoundError(f"File not found: {abs_path}")
+        safe_path = validate_safe_file_path(file_path)
+        abs_path = str(safe_path)
 
         user32 = ctypes.windll.user32
         kernel32 = ctypes.windll.kernel32
@@ -551,9 +556,10 @@ class WinPlatform(DesktopPlatform):
         print(f"Mounted file to Windows Clipboard: {abs_path}")
 
     def activate_app(self, app_name: str) -> None:
-        """Bring window containing app_name in its title to front with retained callback reference."""
+        """Bring window containing app_name in its title to front with retained callback reference and name validation."""
         if sys.platform != "win32":
             return
+        safe_app = validate_app_name(app_name)
         user32 = ctypes.windll.user32
 
         def _enum_windows_cb(hwnd, extra):
@@ -562,7 +568,7 @@ class WinPlatform(DesktopPlatform):
                 buff = ctypes.create_unicode_buffer(length + 1)
                 user32.GetWindowTextW(hwnd, buff, length + 1)
                 title = buff.value
-                if app_name.lower() in title.lower() and user32.IsWindowVisible(hwnd):
+                if safe_app.lower() in title.lower() and user32.IsWindowVisible(hwnd):
                     user32.ShowWindow(hwnd, 9)  # SW_RESTORE
                     user32.SetForegroundWindow(hwnd)
                     return False

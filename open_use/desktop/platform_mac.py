@@ -22,6 +22,11 @@ from typing import Any, Dict, List, Optional
 
 from .hal import DesktopPlatform, UIElement
 
+try:
+    from ..core.security import validate_app_name, validate_safe_file_path
+except Exception:
+    from open_use.core.security import validate_app_name, validate_safe_file_path
+
 logger = logging.getLogger("open_use.desktop.mac")
 
 # Pinned SHA256 hashes of bundled official arm64 binaries
@@ -302,10 +307,9 @@ class MacPlatform(DesktopPlatform):
         subprocess.run(["osascript", "-e", script, target_char], timeout=5.0, check=False)
 
     def copy_file_to_clipboard(self, file_path: str) -> None:
-        """Mount file to NSPasteboard (Zero injection via argv)."""
-        abs_path = os.path.abspath(file_path)
-        if not os.path.exists(abs_path):
-            raise FileNotFoundError(f"File not found: {abs_path}")
+        """Mount file to NSPasteboard with path sandbox security check."""
+        safe_path = validate_safe_file_path(file_path)
+        abs_path = str(safe_path)
 
         if os.path.exists(self.native_bin):
             subprocess.run([self.native_bin, "copy_file", abs_path], timeout=5.0, check=True)
@@ -319,6 +323,7 @@ class MacPlatform(DesktopPlatform):
             subprocess.run([self.native_bin, "scroll", str(x), str(y), str(delta)], timeout=5.0, check=False)
 
     def activate_app(self, app_name: str) -> None:
-        """Activate app via parameterized osascript."""
+        """Activate app via parameterized osascript with validated app name."""
+        safe_app = validate_app_name(app_name)
         script = 'on run argv\ntell application (item 1 of argv) to activate\nend run'
-        subprocess.run(["osascript", "-e", script, app_name], timeout=5.0, check=False)
+        subprocess.run(["osascript", "-e", script, safe_app], timeout=5.0, check=False)
