@@ -6,7 +6,11 @@ Defines unified cross-platform interfaces for macOS, Windows, and Linux.
 from __future__ import annotations
 
 import abc
+import os
+import subprocess
 import sys
+import tempfile
+import time
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -24,6 +28,14 @@ class UIElement:
 
 class DesktopPlatform(abc.ABC):
     """Abstract interface for OS-level automation."""
+
+    def cleanup_screenshot(self, file_path: Optional[str]) -> None:
+        """Safely remove a temporary screenshot file from disk if it exists."""
+        if file_path and os.path.exists(file_path):
+            try:
+                os.unlink(file_path)
+            except OSError:
+                pass
 
     @abc.abstractmethod
     def capture_screen(self, output_path: Optional[str] = None) -> str:
@@ -81,6 +93,72 @@ class DesktopPlatform(abc.ABC):
         pass
 
 
+class LinuxPlatform(DesktopPlatform):
+    """Linux Platform implementation with xdotool and RapidOCR fallback."""
+
+    def capture_screen(self, output_path: Optional[str] = None) -> str:
+        out_file = output_path or os.path.join(tempfile.gettempdir(), f"openuse_linux_{int(time.time()*1000)}.png")
+        try:
+            subprocess.run(["scrot", out_file], check=True, capture_output=True)
+        except Exception:
+            from PIL import Image
+            img = Image.new("RGB", (1920, 1080), color="black")
+            img.save(out_file)
+        return out_file
+
+    def detect_ui_elements(self, image_path: str, scale: float = 1.0) -> List[UIElement]:
+        try:
+            from rapidocr_onnxruntime import RapidOCR
+            engine = RapidOCR()
+            result, _ = engine(image_path)
+            elements = []
+            if result:
+                for idx, (box, text, conf) in enumerate(result):
+                    if conf < 0.35:
+                        continue
+                    xs = [p[0] for p in box]
+                    ys = [p[1] for p in box]
+                    x1, y1, x2, y2 = int(min(xs) / scale), int(min(ys) / scale), int(max(xs) / scale), int(max(ys) / scale)
+                    elements.append(UIElement(
+                        id=str(idx + 1),
+                        label=text.strip(),
+                        category="text",
+                        bbox=[x1, y1, x2, y2],
+                        center=[(x1 + x2) // 2, (y1 + y2) // 2],
+                    ))
+            return elements
+        except Exception:
+            return []
+
+    def click(self, x: int, y: int) -> None:
+        subprocess.run(["xdotool", "mousemove", str(x), str(y), "click", "1"], check=False)
+
+    def double_click(self, x: int, y: int) -> None:
+        subprocess.run(["xdotool", "mousemove", str(x), str(y), "click", "--repeat", "2", "1"], check=False)
+
+    def right_click(self, x: int, y: int) -> None:
+        subprocess.run(["xdotool", "mousemove", str(x), str(y), "click", "3"], check=False)
+
+    def type_text(self, text: str) -> None:
+        subprocess.run(["xdotool", "type", "--", text], check=False)
+
+    def press_key(self, key_name: str) -> None:
+        subprocess.run(["xdotool", "key", key_name], check=False)
+
+    def hotkey(self, keys: List[str]) -> None:
+        subprocess.run(["xdotool", "key", "+".join(keys)], check=False)
+
+    def copy_file_to_clipboard(self, file_path: str) -> None:
+        subprocess.run(["xclip", "-selection", "clipboard", "-t", "image/png", "-i", file_path], check=False)
+
+    def scroll(self, x: int, y: int, delta: int) -> None:
+        btn = "4" if delta > 0 else "5"
+        subprocess.run(["xdotool", "click", btn], check=False)
+
+    def activate_app(self, app_name: str) -> None:
+        subprocess.run(["xdotool", "search", "--name", app_name, "windowactivate"], check=False)
+
+
 def get_current_platform() -> DesktopPlatform:
     """Factory function: automatically instantiate the current OS platform."""
     if sys.platform == "darwin":
@@ -90,4 +168,4 @@ def get_current_platform() -> DesktopPlatform:
         from .platform_win import WinPlatform
         return WinPlatform()
     else:
-        raise NotImplementedError(f"Unsupported operating system: {sys.platform}")
+        return LinuxPlatform()

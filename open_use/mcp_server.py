@@ -7,13 +7,17 @@ Compatible with Claude Desktop, Cursor, Windsurf, Zed, and Antigravity.
 from __future__ import annotations
 
 import json
+import logging
 import os
 import sys
+import threading
 import traceback
 from typing import Any, Dict, List, Optional
 
 from .agent import OpenAgent, OmniAgent
 from .desktop.hal import get_current_platform
+
+logger = logging.getLogger("open_use.mcp_server")
 
 
 class MCPServer:
@@ -22,6 +26,7 @@ class MCPServer:
     def __init__(self):
         self.agent = OpenAgent()
         self.platform = get_current_platform()
+        self._lock = threading.Lock()
 
     def get_tools_manifest(self) -> List[Dict[str, Any]]:
         """Return schema for all exposed tools."""
@@ -149,69 +154,78 @@ class MCPServer:
         ]
 
     def handle_tool_call(self, name: str, args: Dict[str, Any]) -> Any:
-        """Dispatch tool calls to corresponding engine."""
-        if name in ("open_run", "omni_run"):
-            res = self.agent.run(goal=args["goal"])
-            return {"status": "success", "result": str(res)}
+        """Dispatch tool calls to corresponding engine with concurrency locking and state isolation."""
+        with self._lock:
+            isolated_agent = OpenAgent(click_delay=self.agent.click_delay)
 
-        elif name == "desktop_run_goal":
-            max_steps = args.get("max_steps", 15)
-            res = self.agent.run_desktop(goal=args["goal"], max_steps=max_steps)
-            last_step = res[-1] if res else None
-            needs_llm = (last_step.action_type == "escalate_to_llm") if last_step else False
-            return {
-                "status": "escalated_to_llm" if needs_llm else "success",
-                "completed": any(r.is_goal_satisfied for r in res),
-                "steps_executed": len(res),
-                "needs_llm_intervention": needs_llm,
-                "escalation_reason": last_step.target_label if needs_llm else "",
-                "next_hint": (
-                    "Execute one strategic step (e.g. desktop_click_button or desktop_type_text) to break the impasse. "
-                    "Jev will automatically sniff if it can reclaim control on subsequent cycles."
-                    if needs_llm else "Task proceeded normally."
-                ),
-            }
+            if name in ("open_run", "omni_run"):
+                res = isolated_agent.run(goal=args["goal"])
+                return {"status": "success", "result": str(res)}
 
-        elif name == "browser_run_goal":
-            url = args["url"]
-            goal = args["goal"]
-            max_steps = args.get("max_steps", 25)
-            res = self.agent.run_browser(url=url, goal=goal, max_steps=max_steps)
-            return {"status": "success", "browser_result": res}
+            elif name == "desktop_run_goal":
+                max_steps = args.get("max_steps", 15)
+                res = isolated_agent.run_desktop(goal=args["goal"], max_steps=max_steps)
+                last_step = res[-1] if res else None
+                needs_llm = (last_step.action_type == "escalate_to_llm") if last_step else False
+                return {
+                    "status": "escalated_to_llm" if needs_llm else "success",
+                    "completed": any(r.is_goal_satisfied for r in res),
+                    "steps_executed": len(res),
+                    "needs_llm_intervention": needs_llm,
+                    "escalation_reason": last_step.target_label if needs_llm else "",
+                    "next_hint": (
+                        "Execute one strategic step (e.g. desktop_click_button or desktop_type_text) to break the impasse. "
+                        "Jev will automatically sniff if it can reclaim control on subsequent cycles."
+                        if needs_llm else "Task proceeded normally."
+                    ),
+                }
 
-        elif name == "desktop_get_buttons":
-            shot = self.platform.capture_screen()
-            scale = 1.0 if sys.platform == "win32" else 2.0
-            elements = self.platform.detect_ui_elements(shot, scale=scale)
-            return {
-                "total": len(elements),
-                "buttons": [
-                    {"id": el.id, "label": el.label, "category": el.category, "center": el.center}
-                    for el in elements[:60]
-                ],
-            }
+            elif name == "browser_run_goal":
+                url = args["url"]
+                goal = args["goal"]
+                max_steps = args.get("max_steps", 25)
+                res = isolated_agent.run_browser(url=url, goal=goal, max_steps=max_steps)
+                return {"status": "success", "browser_result": res}
 
-        elif name == "desktop_click_button":
-            btn_id = str(args["button_id"]).replace("btn_", "").strip()
-            shot = self.platform.capture_screen()
-            scale = 1.0 if sys.platform == "win32" else 2.0
-            elements = self.platform.detect_ui_elements(shot, scale=scale)
-            target = next((e for e in elements if e.id == btn_id), None)
-            if not target:
-                return {"status": "error", "message": f"Button with ID {btn_id} not found"}
-            self.platform.click(target.center[0], target.center[1])
-            return {"status": "success", "clicked": target.label, "point": target.center}
+            elif name == "desktop_get_buttons":
+                shot = self.platform.capture_screen()
+                try:
+                    scale = 1.0 if sys.platform == "win32" else 2.0
+                    elements = self.platform.detect_ui_elements(shot, scale=scale)
+                    return {
+                        "total": len(elements),
+                        "buttons": [
+                            {"id": el.id, "label": el.label, "category": el.category, "center": el.center}
+                            for el in elements[:60]
+                        ],
+                    }
+                finally:
+                    self.platform.cleanup_screenshot(shot)
 
-        elif name == "desktop_type_text":
-            self.platform.type_text(args["text"])
-            return {"status": "success", "typed": args["text"]}
+            elif name == "desktop_click_button":
+                btn_id = str(args["button_id"]).replace("btn_", "").strip()
+                shot = self.platform.capture_screen()
+                try:
+                    scale = 1.0 if sys.platform == "win32" else 2.0
+                    elements = self.platform.detect_ui_elements(shot, scale=scale)
+                    target = next((e for e in elements if e.id == btn_id), None)
+                    if not target:
+                        return {"status": "error", "message": f"Button with ID {btn_id} not found"}
+                    self.platform.click(target.center[0], target.center[1])
+                    return {"status": "success", "clicked": target.label, "point": target.center}
+                finally:
+                    self.platform.cleanup_screenshot(shot)
 
-        elif name == "desktop_copy_file_to_clipboard":
-            self.platform.copy_file_to_clipboard(args["file_path"])
-            return {"status": "success", "mounted_file": args["file_path"]}
+            elif name == "desktop_type_text":
+                self.platform.type_text(args["text"])
+                return {"status": "success", "typed": args["text"]}
 
-        else:
-            raise ValueError(f"Unknown tool: {name}")
+            elif name == "desktop_copy_file_to_clipboard":
+                self.platform.copy_file_to_clipboard(args["file_path"])
+                return {"status": "success", "mounted_file": args["file_path"]}
+
+            else:
+                raise ValueError(f"Unknown tool: {name}")
 
     def run_stdio(self) -> None:
         """Run standard MCP JSON-RPC stdio event loop."""
@@ -228,7 +242,18 @@ class MCPServer:
 
             try:
                 req = json.loads(line)
-            except Exception:
+            except json.JSONDecodeError as jde:
+                logger.warning(f"Failed to parse incoming JSON-RPC line: {jde}")
+                resp = {
+                    "jsonrpc": "2.0",
+                    "id": None,
+                    "error": {
+                        "code": -32700,
+                        "message": f"Parse error: {str(jde)}",
+                    },
+                }
+                sys.stdout.write(json.dumps(resp) + "\n")
+                sys.stdout.flush()
                 continue
 
             req_id = req.get("id")
@@ -282,11 +307,9 @@ class MCPServer:
                     resp = {
                         "jsonrpc": "2.0",
                         "id": req_id,
-                        "isError": True,
                         "error": {
                             "code": -32603,
-                            "message": str(err),
-                            "data": traceback.format_exc(),
+                            "message": f"Tool execution error: {type(err).__name__}: {str(err)}",
                         },
                     }
             elif method == "ping":

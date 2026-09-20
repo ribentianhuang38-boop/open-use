@@ -9,21 +9,15 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 try:
+    from open_use.core.jev_judge import GoalVerdict, JevJudge
+    from open_use.browser.browser import Browser, StalePage
+    from open_use.browser.model import action_space, choose, field_context, field_text
+    from open_use.browser.questions import MAX_STEPS
+except ImportError:
     from ..core.jev_judge import GoalVerdict, JevJudge
     from .browser import Browser, StalePage
     from .model import action_space, choose, field_context, field_text
     from .questions import MAX_STEPS
-except (ImportError, ValueError):
-    try:
-        from .jev_judge import GoalVerdict, JevJudge
-        from .browser import Browser, StalePage
-        from .model import action_space, choose, field_context, field_text
-        from .questions import MAX_STEPS
-    except (ImportError, ValueError):
-        from jev_judge import GoalVerdict, JevJudge
-        from browser import Browser, StalePage
-        from model import action_space, choose, field_context, field_text
-        from questions import MAX_STEPS
 
 logger = logging.getLogger("browser_use_jev.agent")
 

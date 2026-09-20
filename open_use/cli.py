@@ -57,7 +57,12 @@ def main():
         sys.exit(1)
 
     agent = OpenAgent()
-    agent.run(goal=args.goal, mode=args.mode, url=args.url if args.url else None)
+    agent.run(
+        goal=args.goal,
+        mode=args.mode,
+        url=args.url if args.url else None,
+        max_steps=args.max_steps,
+    )
 
 
 if __name__ == "__main__":

@@ -4,4 +4,4 @@ from .agent import OpenAgent, OmniAgent
 from .desktop.agent import DesktopAgent
 from .desktop.hal import DesktopPlatform, UIElement, get_current_platform
 
-__all__ = ["OpenAgent", "OmniAgent", "DesktopAgent", "get_current_platform", "UIElement"]
+__all__ = ["OpenAgent", "OmniAgent", "DesktopAgent", "DesktopPlatform", "get_current_platform", "UIElement"]

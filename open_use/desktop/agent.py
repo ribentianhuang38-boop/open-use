@@ -145,11 +145,12 @@ class DesktopAgent:
         self.step_count += 1
         t_start = time.perf_counter()
 
-        # 1. Capture screen
+        # 1. Capture screen & detect UI elements
         raw_shot = self.platform.capture_screen()
-
-        # 2. Detect UI elements (Vision on Mac / RapidOCR on Win)
-        elements = self.platform.detect_ui_elements(raw_shot, scale=self.scale)
+        try:
+            elements = self.platform.detect_ui_elements(raw_shot, scale=self.scale)
+        finally:
+            self.platform.cleanup_screenshot(raw_shot)
         screen_summary = " ".join(e.label for e in elements[:35])
 
         # 2.1 Wrong Branch Monitor & Auto-Rollback
@@ -160,7 +161,10 @@ class DesktopAgent:
             # Re-capture normalized screen after rollback
             time.sleep(0.3)
             raw_shot = self.platform.capture_screen()
-            elements = self.platform.detect_ui_elements(raw_shot, scale=self.scale)
+            try:
+                elements = self.platform.detect_ui_elements(raw_shot, scale=self.scale)
+            finally:
+                self.platform.cleanup_screenshot(raw_shot)
             screen_summary = " ".join(e.label for e in elements[:35])
 
         # 2.2 Jev Self-Assessment: Can I handle this?
@@ -230,6 +234,19 @@ class DesktopAgent:
             time.sleep(0.4)
             self.platform.press_key("return")
             time.sleep(self.click_delay)
+        elif action_type == "type_text":
+            text_match = re.search(r'["\']([^"\']+)["\']', self.goal)
+            text_to_type = text_match.group(1) if text_match else ""
+            if not text_to_type:
+                for kw in ("输入", "type", "send", "发送"):
+                    if kw in self.goal:
+                        parts = self.goal.split(kw, 1)
+                        if len(parts) > 1 and parts[1].strip():
+                            text_to_type = parts[1].strip().split()[0]
+                            break
+            if text_to_type:
+                self.platform.type_text(text_to_type)
+                time.sleep(self.click_delay)
         elif action_type == "click" and target_point:
             self.platform.click(target_point[0], target_point[1])
             time.sleep(self.click_delay)
@@ -245,8 +262,9 @@ class DesktopAgent:
         elif action_type == "wait":
             time.sleep(0.8)
 
-        # 6. Judge verification
-        is_satisfied = (action_type == "done")
+        # 6. Judge verification & completion keywords check
+        keyword_hit = any(kw in screen_summary for kw in self.COMPLETION_KEYWORDS)
+        is_satisfied = (action_type == "done") or (keyword_hit and self.step_count >= 2)
         judge_score = 1.0 if is_satisfied else 0.0
 
         step_res = DesktopStepResult(

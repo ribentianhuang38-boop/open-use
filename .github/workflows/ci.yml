@@ -40,3 +40,7 @@ jobs:
     - name: Verify CLI Help
       run: |
         python run.py --help
+
+    - name: Run Unit Tests
+      run: |
+        pytest tests/ -v

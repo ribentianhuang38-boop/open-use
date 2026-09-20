@@ -5,6 +5,7 @@ High-performance, typed probabilistic decision and evaluation client.
 
 from __future__ import annotations
 
+import logging
 import os
 import time
 from dataclasses import dataclass, field
@@ -13,19 +14,36 @@ from typing import Any, Dict, List, Optional
 
 import httpx
 
-try:
-    from dotenv import load_dotenv
-    _env_path = Path(__file__).resolve().parent / ".env"
-    if _env_path.exists():
-        load_dotenv(_env_path)
-except ImportError:
-    _env_path = Path(__file__).resolve().parent / ".env"
-    if _env_path.exists():
-        for line in _env_path.read_text(encoding="utf-8").splitlines():
-            line = line.strip()
-            if line and not line.startswith("#") and "=" in line:
-                k, v = line.split("=", 1)
-                os.environ.setdefault(k.strip(), v.strip().strip("'\""))
+logger = logging.getLogger("open_use.core.jev_client")
+
+def _load_env_file():
+    """Discover and load .env from current directory or any parent directories."""
+    candidates = [
+        Path.cwd() / ".env",
+        Path(__file__).resolve().parent.parent.parent / ".env",
+        Path(__file__).resolve().parent.parent / ".env",
+        Path(__file__).resolve().parent / ".env",
+    ]
+    for env_path in candidates:
+        if env_path.is_file():
+            try:
+                from dotenv import load_dotenv
+                load_dotenv(env_path)
+            except ImportError:
+                for line in env_path.read_text(encoding="utf-8").splitlines():
+                    line = line.strip()
+                    if line and not line.startswith("#") and "=" in line:
+                        k, v = line.split("=", 1)
+                        os.environ.setdefault(k.strip(), v.strip().strip("'\""))
+            break
+
+    # Alias sync: JEV_API_KEY <-> TYPESAFE_API_KEY
+    key = os.environ.get("TYPESAFE_API_KEY") or os.environ.get("JEV_API_KEY")
+    if key:
+        os.environ.setdefault("TYPESAFE_API_KEY", key)
+        os.environ.setdefault("JEV_API_KEY", key)
+
+_load_env_file()
 
 
 @dataclass
@@ -94,7 +112,8 @@ class JevClient:
         self.base_url = (base_url or os.environ.get("TYPESAFE_BASE_URL", self.DEFAULT_BASE_URL)).rstrip("/")
         try:
             self._client = httpx.Client(http2=True, timeout=timeout)
-        except Exception:
+        except Exception as exc:
+            logger.debug(f"HTTP/2 client initialization failed ({exc}); falling back to HTTP/1.1")
             self._client = httpx.Client(http2=False, timeout=timeout)
 
     def query_systemone(

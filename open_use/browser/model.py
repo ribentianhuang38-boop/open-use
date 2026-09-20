@@ -140,9 +140,9 @@ def choose(state: Dict[str, Any], goal: str, history: List[Dict[str, Any]]) -> D
         "questions": questions,
     }
     started = time.perf_counter()
-    api_key = os.environ.get("TYPESAFE_API_KEY")
+    api_key = os.environ.get("TYPESAFE_API_KEY") or os.environ.get("JEV_API_KEY")
     if not api_key:
-        raise ValueError("TYPESAFE_API_KEY environment variable is required.")
+        raise ValueError("TYPESAFE_API_KEY or JEV_API_KEY environment variable is required.")
 
     result = post_json("https://api.typesafe.ai/v1/systemone", api_key, body)
     operation_answer = validate_choice(result["answers"].get("operation", {}), operations)

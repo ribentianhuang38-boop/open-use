@@ -1,28 +1,49 @@
-"""macOS Platform Implementation for Desktop Automation.
+"""Production-grade macOS Desktop Automation Platform with Security Hardening.
 
-Uses:
-1. Apple Vision Accurate mode (Swift) running on Apple Neural Engine (ANE).
-2. native_events (Swift CGEvent) for sub-millisecond hardware clicks & typing.
-3. NSPasteboard for native file mounting.
+Features:
+1. Native Apple Vision Neural OCR (.accurate) + VNDetectRectangles.
+2. Binary SHA256 integrity verification and reproducible source compilation.
+3. Zero-injection osascript argument passing (on run argv).
+4. Dual-mode fallback: Bundled Binary -> Swift JIT -> Pure Python RapidOCR.
 """
 
 from __future__ import annotations
 
+import hashlib
+import logging
 import os
+import platform
 import subprocess
 import sys
+import tempfile
 import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from .hal import DesktopPlatform, UIElement
 
+logger = logging.getLogger("open_use.desktop.mac")
+
+# Pinned SHA256 hashes of bundled official arm64 binaries
+EXPECTED_HASHES = {
+    "native_events": "90750e7430ad9d14f6fcc561a12b751159e3cca0da1487a6b8edb2603390801c",
+    "ocr_detector": "fccd1e3ffb5c10bace42e5c6f2b8f9d503f447b48d459d7e821ccb0010dd988c",
+}
+
+
+def _compute_sha256(file_path: str) -> str:
+    """Compute SHA256 hash of a file."""
+    h = hashlib.sha256()
+    with open(file_path, "rb") as f:
+        while chunk := f.read(65536):
+            h.update(chunk)
+    return h.hexdigest()
+
 
 class MacPlatform(DesktopPlatform):
-    """Production-grade macOS Desktop Automation Platform."""
+    """Production-grade, security-hardened macOS Desktop Automation Platform."""
 
     def __init__(self):
-        # Locate precompiled binaries
         bin_dir = Path(__file__).resolve().parent.parent / "bin"
         bin_dir.mkdir(parents=True, exist_ok=True)
         swift_dir = Path(__file__).resolve().parent / "swift"
@@ -30,30 +51,60 @@ class MacPlatform(DesktopPlatform):
         self.ocr_bin = str(bin_dir / "ocr_detector")
         self.native_bin = str(bin_dir / "native_events")
 
-        # Auto-compile from Swift source if precompiled binaries are missing
-        if not os.path.exists(self.ocr_bin) and (swift_dir / "ocr_detector.swift").exists():
-            try:
-                subprocess.run(
-                    ["swiftc", "-O", str(swift_dir / "ocr_detector.swift"), "-o", self.ocr_bin],
-                    check=True, capture_output=True, timeout=30.0,
-                )
-                os.chmod(self.ocr_bin, 0o755)
-            except Exception:
-                pass
+        is_arm64 = platform.machine().lower() in ("arm64", "aarch64")
 
-        if not os.path.exists(self.native_bin) and (swift_dir / "native_events.swift").exists():
+        # 1. Verify or rebuild native_events
+        self._ensure_binary(
+            bin_name="native_events",
+            bin_path=self.native_bin,
+            swift_src=swift_dir / "native_events.swift",
+            is_arm64=is_arm64,
+        )
+
+        # 2. Verify or rebuild ocr_detector
+        self._ensure_binary(
+            bin_name="ocr_detector",
+            bin_path=self.ocr_bin,
+            swift_src=swift_dir / "ocr_detector.swift",
+            is_arm64=is_arm64,
+        )
+
+    def _ensure_binary(self, bin_name: str, bin_path: str, swift_src: Path, is_arm64: bool):
+        """Verify binary signature/hash or compile from Swift source."""
+        needs_compile = False
+
+        if not os.path.exists(bin_path):
+            needs_compile = True
+        elif not is_arm64:
+            # Non-arm64 machine (e.g. Intel x86_64) must recompile
+            needs_compile = True
+        else:
+            # Check SHA256 integrity
+            current_hash = _compute_sha256(bin_path)
+            expected = EXPECTED_HASHES.get(bin_name)
+            if expected and current_hash != expected:
+                logger.warning(
+                    f"[Security] Hash mismatch for {bin_name} (found {current_hash[:8]}, expected {expected[:8]}). "
+                    "Recompiling from verified local Swift source..."
+                )
+                needs_compile = True
+
+        if needs_compile and swift_src.exists():
             try:
                 subprocess.run(
-                    ["swiftc", "-O", str(swift_dir / "native_events.swift"), "-o", self.native_bin],
-                    check=True, capture_output=True, timeout=30.0,
+                    ["swiftc", "-O", str(swift_src), "-o", bin_path],
+                    check=True,
+                    capture_output=True,
+                    timeout=30.0,
                 )
-                os.chmod(self.native_bin, 0o755)
-            except Exception:
-                pass
+                os.chmod(bin_path, 0o755)
+                logger.info(f"Compiled native binary {bin_name} successfully.")
+            except Exception as exc:
+                logger.warning(f"Could not compile {bin_name} from Swift: {exc}. Will fallback to pure Python/AppleScript.")
 
     def capture_screen(self, output_path: Optional[str] = None) -> str:
-        """Capture screen using native screencapture."""
-        out_file = output_path or f"/tmp/mac_screen_{int(time.time()*1000)}.png"
+        """Capture screen using native screencapture into system temp dir."""
+        out_file = output_path or os.path.join(tempfile.gettempdir(), f"openuse_mac_{int(time.time()*1000)}.png")
         Path(out_file).parent.mkdir(parents=True, exist_ok=True)
         subprocess.run(["screencapture", "-x", out_file], check=True)
         return out_file
@@ -110,10 +161,10 @@ class MacPlatform(DesktopPlatform):
                             continue
                 if elements:
                     return elements
-            except Exception:
-                pass
+            except subprocess.SubprocessError as e:
+                logger.warning(f"Apple Vision OCR binary execution failed: {e}")
 
-        # 2. Fallback: Pure Python RapidOCR (if installed on macOS)
+        # 2. Fallback: Pure Python RapidOCR
         try:
             from rapidocr_onnxruntime import RapidOCR
             engine = RapidOCR()
@@ -137,42 +188,43 @@ class MacPlatform(DesktopPlatform):
                             center=[cx, cy],
                         )
                     )
-        except Exception:
-            pass
+        except ImportError:
+            logger.info("RapidOCR is not installed for fallback.")
+        except Exception as e:
+            logger.warning(f"RapidOCR fallback error: {e}")
 
         return elements
 
     def click(self, x: int, y: int) -> None:
-        """Send native CGEvent click."""
+        """Send native hardware mouse click."""
         if os.path.exists(self.native_bin):
             subprocess.run([self.native_bin, "click", str(x), str(y)], check=False)
         else:
-            subprocess.run(["cliclick", f"c:{x},{y}"], check=False)
+            script = 'on run argv\nset {x, y} to {item 1 of argv as integer, item 2 of argv as integer}\ntell application "System Events" to click at {x, y}\nend run'
+            subprocess.run(["osascript", "-e", script, str(x), str(y)], check=False)
 
     def double_click(self, x: int, y: int) -> None:
-        """Send native CGEvent double click."""
+        """Send native hardware double click."""
         if os.path.exists(self.native_bin):
             subprocess.run([self.native_bin, "double_click", str(x), str(y)], check=False)
         else:
-            subprocess.run(["cliclick", f"dc:{x},{y}"], check=False)
+            self.click(x, y)
+            time.sleep(0.08)
+            self.click(x, y)
 
     def right_click(self, x: int, y: int) -> None:
-        """Send native CGEvent right click."""
+        """Send native hardware right click."""
         if os.path.exists(self.native_bin):
             subprocess.run([self.native_bin, "right_click", str(x), str(y)], check=False)
-        else:
-            subprocess.run(["cliclick", f"rc:{x},{y}"], check=False)
 
     def type_text(self, text: str) -> None:
-        """Type Unicode string using native events."""
+        """Type Unicode text natively into focused window (Zero injection via argv/native binary)."""
         if os.path.exists(self.native_bin):
             subprocess.run([self.native_bin, "type_text", text], check=False)
         else:
-            escaped = text.replace("\\", "\\\\").replace('"', '\\"')
-            subprocess.run(
-                ["osascript", "-e", f'tell application "System Events" to keystroke "{escaped}"'],
-                check=False,
-            )
+            # Safe parameterized AppleScript execution
+            script = 'on run argv\ntell application "System Events" to keystroke (item 1 of argv)\nend run'
+            subprocess.run(["osascript", "-e", script, text], check=False)
 
     def press_key(self, key_name: str) -> None:
         """Press special key via key_code."""
@@ -187,12 +239,12 @@ class MacPlatform(DesktopPlatform):
                 subprocess.run([self.native_bin, "key_code", str(code)], check=False)
             else:
                 subprocess.run(
-                    ["osascript", "-e", f'tell application "System Events" to key code {code}'],
+                    ["osascript", "-e", 'on run argv\ntell application "System Events" to key code (item 1 of argv as integer)\nend run', str(code)],
                     check=False,
                 )
 
     def hotkey(self, keys: List[str]) -> None:
-        """Trigger keyboard shortcut on macOS via System Events."""
+        """Trigger keyboard shortcut safely via parameterized AppleScript."""
         modifiers = []
         target_char = ""
         for k in keys:
@@ -212,21 +264,24 @@ class MacPlatform(DesktopPlatform):
             return
 
         if modifiers:
-            mod_str = " using {" + ", ".join(modifiers) + "}"
+            mod_expr = "using {" + ", ".join(modifiers) + "}"
         else:
-            mod_str = ""
+            mod_expr = ""
 
-        script = f'tell application "System Events" to keystroke "{target_char}"{mod_str}'
-        subprocess.run(["osascript", "-e", script], check=False)
+        script = f'on run argv\ntell application "System Events" to keystroke (item 1 of argv) {mod_expr}\nend run'
+        subprocess.run(["osascript", "-e", script, target_char], check=False)
 
     def copy_file_to_clipboard(self, file_path: str) -> None:
-        """Mount file to NSPasteboard."""
+        """Mount file to NSPasteboard (Zero injection via argv)."""
+        abs_path = os.path.abspath(file_path)
+        if not os.path.exists(abs_path):
+            raise FileNotFoundError(f"File not found: {abs_path}")
+
         if os.path.exists(self.native_bin):
-            subprocess.run([self.native_bin, "copy_file", file_path], check=True)
+            subprocess.run([self.native_bin, "copy_file", abs_path], check=True)
         else:
-            # osascript fallback
-            script = f'set the clipboard to (POSIX file "{file_path}")'
-            subprocess.run(["osascript", "-e", script], check=True)
+            script = 'on run argv\nset the clipboard to (POSIX file (item 1 of argv))\nend run'
+            subprocess.run(["osascript", "-e", script, abs_path], check=True)
 
     def scroll(self, x: int, y: int, delta: int) -> None:
         """Send native scroll event."""
@@ -234,8 +289,6 @@ class MacPlatform(DesktopPlatform):
             subprocess.run([self.native_bin, "scroll", str(x), str(y), str(delta)], check=False)
 
     def activate_app(self, app_name: str) -> None:
-        """Activate app via osascript."""
-        subprocess.run(
-            ["osascript", "-e", f'tell application "{app_name}" to activate'],
-            check=False,
-        )
+        """Activate app via parameterized osascript."""
+        script = 'on run argv\ntell application (item 1 of argv) to activate\nend run'
+        subprocess.run(["osascript", "-e", script, app_name], check=False)

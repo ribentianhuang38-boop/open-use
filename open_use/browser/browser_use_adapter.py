@@ -9,18 +9,15 @@ from __future__ import annotations
 import logging
 from typing import Any, Dict, List, Optional, Tuple
 
-try:
-    from .jev_judge import GoalVerdict, JevJudge, ProgressVerdict, SafetyVerdict
-except ImportError:
-    from jev_judge import GoalVerdict, JevJudge, ProgressVerdict, SafetyVerdict
+from ..core.jev_judge import GoalVerdict, JevJudge, ProgressVerdict, SafetyVerdict
 
-logger = logging.getLogger("browser_use_jev.adapter")
+logger = logging.getLogger("open_use.browser.adapter")
 
 
 class JevJudgeEvaluator:
     """Drop-in evaluator for standard browser-use tasks.
 
-    Replaces slow and expensive LLM-as-a-judge calls (e.g. GPT-4o) with
+    Replaces slow and expensive LLM-as-a-judge calls with
     TypeSafe Jev (<300ms, calibrated confidence, typed score).
     """
 
@@ -34,13 +31,9 @@ class JevJudgeEvaluator:
         task_goal: str,
         action_history: Optional[List[Dict[str, Any]]] = None,
     ) -> Tuple[bool, GoalVerdict]:
-        """Evaluate if the task succeeded.
-
-        Returns:
-            (passed: bool, verdict: GoalVerdict)
-        """
+        """Evaluate if the task succeeded."""
         verdict = self.judge.judge_goal_completion(
-            page_state=final_page_state,
+            screen_state=final_page_state,
             goal=task_goal,
             history=action_history,
         )
@@ -59,14 +52,14 @@ class JevJudgeEvaluator:
         task_goal: str,
     ) -> Tuple[bool, SafetyVerdict]:
         """Pre-execution guardrail check for proposed browser actions."""
-        verdict = self.judge.judge_action_safety(
-            proposed_action=action,
-            page_state=current_page_state,
+        action_desc = action.get("label") or action.get("action") or str(action)
+        verdict = self.judge.check_safety(
             goal=task_goal,
+            action=str(action_desc),
         )
         if not verdict.is_safe:
             logger.warning(
-                f"[JevJudge Guardrail] Blocked risky action: {action.get('label')} "
+                f"[JevJudge Guardrail] Blocked risky action: {action_desc} "
                 f"Risk: {verdict.risk_level}, Confidence: {verdict.confidence:.2f}"
             )
         return verdict.is_safe, verdict
@@ -79,11 +72,10 @@ class JevJudgeEvaluator:
         task_goal: str,
     ) -> ProgressVerdict:
         """Evaluate if the step made forward progress or encountered a blocker."""
-        return self.judge.judge_step_progress(
-            prev_page_state=prev_page,
-            current_page_state=current_page,
-            action_taken=executed_action,
-            goal=task_goal,
+        return self.judge.judge_progress(
+            prev_summary=str(prev_page.get("text") or prev_page),
+            curr_summary=str(current_page.get("text") or current_page),
+            last_action=executed_action,
         )
 
 
@@ -91,7 +83,7 @@ def verify_browser_state(page_text: str, page_title: str, page_url: str, goal: s
     """Quick helper function to verify any web page state with Jev Judge."""
     judge = JevJudge()
     verdict = judge.judge_goal_completion(
-        page_state={"text": page_text, "title": page_title, "url": page_url},
+        screen_state={"visible_text": page_text, "active_window": page_title, "url": page_url},
         goal=goal,
     )
     return {

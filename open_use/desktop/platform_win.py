@@ -142,7 +142,8 @@ class WinPlatform(DesktopPlatform):
 
     def capture_screen(self, output_path: Optional[str] = None) -> str:
         """Capture the screen via mss (ultrafast ~15ms) or PIL ImageGrab."""
-        out_file = output_path or f"/tmp/win_screen_{int(time.time()*1000)}.png"
+        import tempfile
+        out_file = output_path or os.path.join(tempfile.gettempdir(), f"openuse_win_{int(time.time()*1000)}.png")
         Path(out_file).parent.mkdir(parents=True, exist_ok=True)
 
         if self._mss:

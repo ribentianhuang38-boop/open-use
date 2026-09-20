@@ -60,17 +60,21 @@ class JevJudge:
 
     def judge_goal_completion(
         self,
-        screen_state: Dict[str, Any],
-        goal: str,
+        screen_state: Optional[Dict[str, Any]] = None,
+        goal: str = "",
         history: Optional[List[Dict[str, Any]]] = None,
+        page_state: Optional[Dict[str, Any]] = None,
     ) -> GoalVerdict:
-        """Judge whether the current desktop UI visibly and completely satisfies the user's goal."""
+        """Judge whether the current desktop UI or web page visibly satisfies the user's goal."""
+        state = screen_state if screen_state is not None else (page_state or {})
+        active_title = state.get("active_window") or state.get("title", "")
+        text_content = state.get("visible_text") or state.get("text", "")
         state_payload = {
             "task": {"goal": goal},
             "screen": {
-                "active_window": screen_state.get("active_window", ""),
-                "visible_text": screen_state.get("visible_text", "")[:4000],
-                "matched_indicators": screen_state.get("matched_indicators", []),
+                "active_window": active_title,
+                "visible_text": str(text_content)[:4000],
+                "matched_indicators": state.get("matched_indicators", []),
             },
         }
         if history:

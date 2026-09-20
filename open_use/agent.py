@@ -41,7 +41,7 @@ class OpenAgent:
         agent = DesktopAgent(goal=goal, platform=self.platform, max_steps=max_steps, click_delay=self.click_delay)
         return agent.run()
 
-    def run(self, goal: str, mode: str = "auto", url: Optional[str] = None) -> Any:
+    def run(self, goal: str, mode: str = "auto", url: Optional[str] = None, max_steps: int = 20) -> Any:
         """Intelligent dispatch: determine whether to run Web, Desktop, or Chained."""
         if mode == "browser" or url:
             target_url = url
@@ -49,19 +49,19 @@ class OpenAgent:
                 url_match = re.search(r"https?://[^\s]+", goal)
                 target_url = url_match.group(0) if url_match else "https://google.com"
             web_goal = goal.replace(target_url, "").strip() or goal
-            return self.run_browser(url=target_url, goal=web_goal)
+            return self.run_browser(url=target_url, goal=web_goal, max_steps=max_steps)
 
         if mode == "desktop":
-            return self.run_desktop(goal=goal)
+            return self.run_desktop(goal=goal, max_steps=max_steps)
 
         # Auto mode: heuristic URL detection
         url_match = re.search(r"https?://[^\s]+", goal)
         if url_match:
             target_url = url_match.group(0)
             web_goal = goal.replace(target_url, "").strip() or "Browse and fulfill task"
-            return self.run_browser(url=target_url, goal=web_goal)
+            return self.run_browser(url=target_url, goal=web_goal, max_steps=max_steps)
         else:
-            return self.run_desktop(goal=goal)
+            return self.run_desktop(goal=goal, max_steps=max_steps)
 
 
 # Backwards compatibility alias
