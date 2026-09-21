@@ -70,3 +70,53 @@ def get_cdp_port() -> int:
     """Get the configured Chrome DevTools Protocol port."""
     load_env()
     return int(os.environ.get("OPENUSE_CDP_PORT", "9333"))
+
+
+def get_llm_provider() -> str:
+    """Get the preferred System 2 LLM provider: auto, gemini, openai, anthropic, or custom."""
+    load_env()
+    return os.environ.get("LLM_PROVIDER", os.environ.get("OPENUSE_LLM_PROVIDER", "auto")).lower()
+
+
+def get_llm_api_key(provider: Optional[str] = None) -> Optional[str]:
+    """Retrieve API key for the requested or auto-detected LLM provider."""
+    load_env()
+    prov = (provider or get_llm_provider()).lower()
+    if prov in ("gemini", "google"):
+        return os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY")
+    elif prov == "openai":
+        return os.environ.get("OPENAI_API_KEY")
+    elif prov == "anthropic":
+        return os.environ.get("ANTHROPIC_API_KEY")
+    
+    # Generic or auto detection
+    return (
+        os.environ.get("LLM_API_KEY")
+        or os.environ.get("GEMINI_API_KEY")
+        or os.environ.get("GOOGLE_API_KEY")
+        or os.environ.get("OPENAI_API_KEY")
+        or os.environ.get("ANTHROPIC_API_KEY")
+    )
+
+
+def get_llm_base_url(provider: Optional[str] = None) -> Optional[str]:
+    """Retrieve Base URL for OpenAI-compatible or custom providers."""
+    load_env()
+    prov = (provider or get_llm_provider()).lower()
+    if prov == "openai":
+        return os.environ.get("OPENAI_BASE_URL", "https://api.openai.com/v1").rstrip("/")
+    return os.environ.get("LLM_BASE_URL")
+
+
+def get_llm_model(provider: Optional[str] = None) -> Optional[str]:
+    """Retrieve default or configured model name for the provider."""
+    load_env()
+    prov = (provider or get_llm_provider()).lower()
+    if prov in ("gemini", "google"):
+        return os.environ.get("GEMINI_MODEL", "gemini-2.0-flash")
+    elif prov == "openai":
+        return os.environ.get("OPENAI_MODEL", "gpt-4o")
+    elif prov == "anthropic":
+        return os.environ.get("ANTHROPIC_MODEL", "claude-3-5-sonnet-20241022")
+    return os.environ.get("LLM_MODEL")
+

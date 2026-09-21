@@ -68,6 +68,9 @@ class JevResponse:
         )
 
 
+_SENTINEL = object()
+
+
 class JevClient:
     """Production TypeSafe Jev System One Client."""
 
@@ -75,12 +78,15 @@ class JevClient:
 
     def __init__(
         self,
-        api_key: Optional[str] = None,
+        api_key: Any = _SENTINEL,
         model: Optional[str] = None,
         base_url: Optional[str] = None,
         timeout: float = 25.0,
     ):
-        self.api_key = api_key or os.environ.get("TYPESAFE_API_KEY") or os.environ.get("JEV_API_KEY")
+        if api_key is _SENTINEL:
+            self.api_key = os.environ.get("TYPESAFE_API_KEY") or os.environ.get("JEV_API_KEY")
+        else:
+            self.api_key = api_key
         self._local_fallback = not bool(self.api_key)
         self.model = model or os.environ.get("TYPESAFE_MODEL", "jev-latest")
         self.base_url = (base_url or os.environ.get("TYPESAFE_BASE_URL", self.DEFAULT_BASE_URL)).rstrip("/")

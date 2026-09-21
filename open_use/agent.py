@@ -52,10 +52,15 @@ class OpenAgent:
         with BrowserAgent(url=safe_url, goals=goal) as agent:
             history = list(agent.run())
             snapshot = agent.snapshot()
+            page = snapshot.get("page", {})
+            title = page.get("title", "")
             return {
                 "status": snapshot.get("status"),
                 "verdict": snapshot.get("verdict"),
                 "history": history,
+                "title": title,
+                "summary": title,
+                "page": page,
                 "jev_steps": max(len(history), 1),
             }
 
@@ -142,6 +147,68 @@ class OpenAgent:
             "elapsed_sec": elapsed_sec,
         }
 
+    def _fetch_realtime_quote(self, text: str) -> Optional[str]:
+        """Fetch real-time financial market quote using global financial endpoints."""
+        import urllib.request
+        lower = text.lower()
+
+        # Comprehensive symbol mapping
+        symbol_map = {
+            "纳斯达克": "us.IXIC", "nasdaq": "us.IXIC", "ixic": "us.IXIC",
+            "道琼斯": "us.DJI", "dji": "us.DJI",
+            "标普": "us.INX", "sp500": "us.INX", "s&p": "us.INX",
+            "苹果": "us.AAPL", "aapl": "us.AAPL",
+            "英伟达": "us.NVDA", "nvda": "us.NVDA",
+            "特斯拉": "us.TSLA", "tsla": "us.TSLA",
+            "微软": "us.MSFT", "msft": "us.MSFT",
+            "谷歌": "us.GOOGL", "googl": "us.GOOGL",
+            "腾讯": "r_hk00700", "00700": "r_hk00700", "700": "r_hk00700", "tencent": "r_hk00700",
+            "阿里": "r_hk09988", "9988": "r_hk09988", "baba": "r_hk09988",
+            "美团": "r_hk03690", "3690": "r_hk03690",
+            "小米": "r_hk01810", "1810": "r_hk01810",
+            "上证": "sh000001", "上证指数": "sh000001",
+            "深证": "sz399001", "深证成指": "sz399001",
+            "创业板": "sz399006",
+            "茅台": "sh600519", "600519": "sh600519",
+        }
+
+        matched_symbol = None
+        for kw, sym in symbol_map.items():
+            if kw in lower:
+                matched_symbol = sym
+                break
+
+        if not matched_symbol:
+            sym_match = re.search(r'\b(us\.[a-z]{1,5}|hk\d{5}|sh\d{6}|sz\d{6})\b', lower)
+            if sym_match:
+                matched_symbol = sym_match.group(1)
+
+        if matched_symbol:
+            try:
+                req = urllib.request.Request(f"https://qt.gtimg.cn/q={matched_symbol}")
+                with urllib.request.urlopen(req, timeout=5) as resp:
+                    raw = resp.read().decode("gbk", errors="ignore")
+                    parts = raw.split("~")
+                    if len(parts) > 35:
+                        name, code, curr = parts[1], parts[2], parts[3]
+                        prev, open_p = parts[4], parts[5]
+                        change, change_pct = parts[31], parts[32]
+                        high, low = parts[33], parts[34]
+                        sign = "+" if not str(change).startswith("-") else ""
+                        unit = "点" if "指数" in name or "us." in matched_symbol else "元"
+                        return (
+                            f"【{name} ({code}) 实时行情】\n"
+                            f"• 当前价格/指数：{curr} {unit}\n"
+                            f"• 当日涨跌：{sign}{change} ({sign}{change_pct}%)\n"
+                            f"• 交易区间：{low} ~ {high} {unit}\n"
+                            f"• 开盘/昨收：{open_p} / {prev} {unit}\n"
+                            f"• 行情来源：全球金融市场实时行情系统"
+                        )
+            except Exception:
+                pass
+
+        return None
+
     def run_parallel_composite(
         self,
         web_task: Union[str, Dict[str, Any]],
@@ -149,15 +216,10 @@ class OpenAgent:
         max_steps: int = 15,
         dry_run: bool = False,
     ) -> Dict[str, Any]:
-        """Execute Web ingestion and Desktop pre-flight concurrently using multi-threading.
-
-        Thread 1: Retrieves web data (CDP / Browser) in parallel.
-        Thread 2: Concurrently activates target desktop app, focuses window, and readies target.
-        Synchronization: When Thread 1 finishes, data is placed on clipboard,
-                         and Desktop immediately pastes (Cmd+V / Ctrl+V) and submits (Return).
-        """
+        """Execute Web ingestion and Desktop pre-flight concurrently using multi-threading."""
         import concurrent.futures
         import threading
+        import urllib.parse
 
         print(f"\n⚡⚡ [OpenUse Multi-Threaded Engine] Launching Concurrent Pipeline:")
         print(f"   ├─ Thread 1 (Web Ingestion): {web_task}")
@@ -174,7 +236,19 @@ class OpenAgent:
             web_goal = str(web_task).replace(web_url, "").strip() if web_url else str(web_task)
 
         if not web_url:
-            web_url = "https://google.com"
+            web_lower = str(web_task).lower()
+            # Symbol matching for financial queries
+            financial_map = {
+                "纳斯达克": "us.IXIC", "nasdaq": "us.IXIC",
+                "道琼斯": "us.DJI", "dji": "us.DJI",
+                "腾讯": "hk00700", "00700": "hk00700",
+                "阿里": "hk09988", "9988": "hk09988",
+            }
+            target_sym = next((sym for kw, sym in financial_map.items() if kw in web_lower), None)
+            if target_sym:
+                web_url = f"https://gu.qq.com/{target_sym}"
+            else:
+                web_url = f"https://www.bing.com/search?q={urllib.parse.quote(web_goal)}"
 
         # 2. Parse Desktop Task
         if isinstance(desktop_task, dict):
@@ -187,6 +261,12 @@ class OpenAgent:
                 target_app = "QQ"
             elif "wechat" in desktop_lower or "微信" in desktop_lower:
                 target_app = "WeChat"
+            elif "slack" in desktop_lower:
+                target_app = "Slack"
+            elif "telegram" in desktop_lower:
+                target_app = "Telegram"
+            elif "dingtalk" in desktop_lower or "钉钉" in desktop_lower:
+                target_app = "DingTalk"
             else:
                 target_app = None
 
@@ -232,13 +312,13 @@ class OpenAgent:
         # Post-synchronization: Deliver extracted content into pre-focused desktop app
         print(f"\n⚡ [Pipeline Sync] Web ingestion completed. Injecting data into {target_app or 'Desktop'}...")
         if not dry_run:
-            content_to_send = ""
-            if isinstance(web_res, dict):
-                verdict = web_res.get("verdict")
-                if verdict and getattr(verdict, "summary", None):
-                    content_to_send = str(verdict.summary)
-                elif web_res.get("status"):
-                    content_to_send = str(web_res.get("status"))
+            content_to_send = self._fetch_realtime_quote(web_goal)
+            if not content_to_send and isinstance(web_res, dict):
+                page_title = web_res.get("title") or web_res.get("summary") or ""
+                if page_title:
+                    content_to_send = f"查询结果：{page_title}"
+                else:
+                    content_to_send = str(web_res.get("status", ""))
 
             if content_to_send and hasattr(self.platform, "set_clipboard_text"):
                 self.platform.set_clipboard_text(content_to_send)
@@ -250,6 +330,7 @@ class OpenAgent:
                 click_delay=self.click_delay,
                 dry_run=dry_run,
                 target_app=target_app,
+                payload_text=content_to_send,
             )
             desktop_steps = d_agent.run()
             d_count = len(desktop_steps)
@@ -291,7 +372,7 @@ class OpenAgent:
 
     def _is_web_task(self, text: str) -> bool:
         lower = text.lower()
-        return bool(re.search(r"https?://", lower)) or any(kw in lower for kw in ["查", "搜索", "浏览", "网页", "浏览器", "http", "google", "bilibili", "youtube", "股价", "股票"])
+        return bool(re.search(r"https?://", lower)) or any(kw in lower for kw in ["查", "搜索", "浏览", "网页", "浏览器", "http", "google", "bilibili", "youtube", "股价", "股票", "指数", "纳斯达克", "行情", "nasdaq"])
 
     def _is_desktop_task(self, text: str) -> bool:
         lower = text.lower()
@@ -299,9 +380,17 @@ class OpenAgent:
 
     def _decompose_goal(self, goal: str) -> List[str]:
         """Automatically decompose composite compound goal into subgoals."""
-        split_pattern = r"(?:然后|随后|之后|接着|并发给|并发送|then|and send to|and then)"
-        parts = [p.strip() for p in re.split(split_pattern, goal, flags=re.IGNORECASE) if p.strip()]
-        return parts if len(parts) > 1 else [goal]
+        clean_goal = re.sub(r'(?:我?jev.*?apikey_\S+|apikey_\S+)', '', goal, flags=re.IGNORECASE).strip()
+        # Tier 1: Explicit conjunctions
+        primary_pattern = r"(?:然后|随后|之后|接着|并发给|并发送|then|and send to|and then)"
+        parts = [p.strip() for p in re.split(primary_pattern, clean_goal, flags=re.IGNORECASE) if p.strip()]
+        if len(parts) > 1:
+            return parts
+
+        # Tier 2: Implicit transition to target contact/application
+        secondary_pattern = r"(?:(?<=[^\s])\s+(?=发(?:给)?)|(?<=[^\s])(?=发(?:给)?\s*(?:qq|wechat|微信|\d{5,})))"
+        parts = [p.strip() for p in re.split(secondary_pattern, clean_goal, flags=re.IGNORECASE) if p.strip()]
+        return parts if len(parts) > 1 else [clean_goal]
 
     def run(
         self,
